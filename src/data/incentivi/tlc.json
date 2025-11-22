@@ -1,0 +1,70 @@
+{
+  "brand": {"title": "Fastweb TLC (Fisso + Mobile)", "logo": "/fastweb_vodafone-logo.svg", "subtitle": "Settembre 2025"},
+  "sections": [
+    {
+      "id": "fisso-residenziale",
+      "title": "Piani in Gara Fisso Residenziale",
+      "table": {
+        "columns": ["TGT PDA", "Casa PRO", "Casa LIGHT/START", "Casa PLUS/ULTRA"],
+        "rows": [
+          ["=> 10", "€ 120", "€ 90", "€ 160"],
+          ["4–9",   "€ 100", "€ 70", "€ 140"],
+          ["BASE (1–3)", "€ 85", "€ 60", "€ 120"]
+        ]
+      },
+      "notes": ["La convergenza col mobile è compensata solo se con ricarica automatica"]
+    },
+    {
+      "id": "fisso-business",
+      "title": "Piani in Gara Fisso Business",
+      "table": {
+        "columns": ["TGT PDA", "FW Business LIGHT", "FW Business", "FW Nexxt Business PLUS", "FW Nexxt Business PRO"],
+        "rows": [
+          ["=> 5", "€ 150", "€ 165", "€ 190", "€ 220"],
+          ["2–4",  "€ 125", "€ 140", "€ 170", "€ 190"],
+          ["BASE (1)", "€ 100", "€ 115", "€ 150", "€ 165"]
+        ]
+      }
+    },
+    {
+      "id": "mobile-res-auto",
+      "title": "Mobile Residenziale – Ricarica Automatica",
+      "table": {
+        "columns": ["TGT PDA", "Mobile/Start", "Full/Pro", "Maxi/Ultra"],
+        "rows": [
+          ["Fino a 5", "€ 50", "€ 70", "€ 85"],
+          ["Da 6 a 10", "€ 55", "€ 75", "€ 90"],
+          ["11 a 19", "€ 60", "€ 80", "€ 95"],
+          ["Da 20", "€ 65", "€ 85", "€ 100"]
+        ]
+      }
+    },
+    {
+      "id": "mobile-business-auto",
+      "title": "Mobile Business – Ricarica Automatica",
+      "notes": ["Convergenza Fisso + Mobile contestuale: +€ 30"],
+      "table": {
+        "columns": ["TGT PDA", "FW Business", "FW Business Freedom", "FW Business Unlimited"],
+        "rows": [
+          ["Fino a 5", "€ 30", "€ 40", "€ 50"],
+          ["Da 6 a 10", "€ 35", "€ 40", "€ 55"],
+          ["11 a 19", "€ 40", "€ 40", "€ 60"],
+          ["Da 20", "€ 45", "€ 45", "€ 65"]
+        ]
+      }
+    },
+    {
+      "id": "mobile-res-pura",
+      "title": "Mobile Residenziale – Ricarica Pura",
+      "table": {
+        "columns": ["TGT PDA", "Mobile/Start (MNP / NO MNP)", "Full/Pro (MNP / NO MNP)", "Maxi/Ultra (MNP / NO MNP)"],
+        "rows": [
+          ["=> 20", "€ 20 / € 10", "€ 30 / € 20", "€ 35 / € 20"],
+          ["10–19", "€ 15 / € 10", "€ 25 / € 20", "€ 30 / € 20"],
+          ["BASE (1–9)", "€ 10 / € 10", "€ 20 / € 15", "€ 25 / € 15"]
+        ]
+      },
+      "footnotes": ["Cessione SIM al Dealer: € 5. Gli importi includono € 10 trattenuti al banco.", "Disattivazione nello stesso mese: nessun compenso e non concorre a soglia."]
+    }
+  ]
+}

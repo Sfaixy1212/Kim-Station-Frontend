@@ -1,0 +1,32 @@
+{
+  "brand": {"title": "Fastweb Energy", "logo": "/fastweb_vodafone-logo.svg", "subtitle": "Settembre 2025"},
+  "sections": [
+    {
+      "id": "obiettivo-energia",
+      "title": "Obiettivo Energia",
+      "notes": [
+        "Validità: 1–30 Settembre 2025",
+        "PDA valide in stato 'Check OK' entro M+1",
+        "CORE: Light / Full / Maxi"
+      ],
+      "table": {
+        "columns": ["TGT PDA", "RES – CORE", "RES – FLEX", "RES – FIX", "BUS – FLEX", "BUS – FIX"],
+        "rows": [
+          ["=> 20", "€ 130", "€ 100", "€ 90", "€ 130", "€ 130"],
+          ["11–19", "€ 115", "€ 90", "€ 80", "€ 115", "€ 115"],
+          ["06–10", "€ 100", "€ 80", "€ 70", "€ 100", "€ 100"],
+          ["01–05", "€ 85",  "€ 70", "€ 60", "€ 85",  "€ 85"]
+        ]
+      }
+    },
+    {
+      "id": "regole",
+      "title": "Condizioni Generali",
+      "bullets": [
+        "Attivazioni effettuate e inserite a sistema nel periodo di gara",
+        "Controlli di compliance e verifiche previste in Dealer Station",
+        "Fatturazione secondo modalità contrattuali; importi soggetti a ritenuta d'acconto"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,678 @@
+import { useEffect, useMemo, useState } from 'react';
+import DashboardLayout from '../../components/layout/DashboardLayout';
+import { useAuth } from '../../contexts/AuthContext';
+import { getProtectedData } from '../../services/api';
+
+// Rimosso MONTHS - non più necessario
+
+export default function Reportistica() {
+  const { user } = useAuth();
+  const now = new Date();
+  const firstDayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`;
+  const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+  const lastDayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(lastDay.getDate()).padStart(2, '0')}`;
+  const [year, setYear] = useState(now.getFullYear());
+  const [month, setMonth] = useState(now.getMonth() + 1);
+  const [operator, setOperator] = useState('fastweb');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [data, setData] = useState({ kpi_card: [], report_kpi: [], report_dealers: [], province_distrib: [] });
+  const [kpiAgent, setKpiAgent] = useState(null);
+  // Nuovi stati per filtro Dealer + range
+  // dealerQuery: testo digitato; dealer: selezione confermata (necessaria per chiamare il range)
+  const [dealerQuery, setDealerQuery] = useState('');
+  const [dealer, setDealer] = useState('');
+  // Valori temporanei per i campi data (prima di applicare il filtro)
+  const [fromTemp, setFromTemp] = useState(firstDayStr);
+  const [toTemp, setToTemp] = useState(lastDayStr);
+  // Valori applicati per le chiamate API
+  const [from, setFrom] = useState(firstDayStr);
+  const [to, setTo] = useState(lastDayStr);
+  const [rangeLoading, setRangeLoading] = useState(false);
+  const [rangeError, setRangeError] = useState(null);
+  const [rangeData, setRangeData] = useState({ tab1: [], tab2: [], tab3: [], tab4: [] });
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [lastUpdates, setLastUpdates] = useState({ tlc: null, energy: null });
+  // Includi dealer con tutte le colonne a zero nel Dettaglio Dealer
+  const [includeZero, setIncludeZero] = useState(true);
+
+  // Rimosso years - non più necessario
+
+  // Funzione per applicare il filtro date
+  const handleApplyDateFilter = () => {
+    console.log('[Reportistica] Applicando filtro date:', { fromTemp, toTemp });
+    setFrom(fromTemp);
+    setTo(toTemp);
+    
+    // Estrai year e month dalla data "from" per assicurarti che i parametri siano coerenti
+    if (fromTemp) {
+      const fromDate = new Date(fromTemp);
+      if (!isNaN(fromDate.getTime())) {
+        const newYear = fromDate.getFullYear();
+        const newMonth = fromDate.getMonth() + 1;
+        console.log('[Reportistica] Aggiornando year/month:', { newYear, newMonth });
+        setYear(newYear);
+        setMonth(newMonth);
+      }
+    }
+    
+    // Imposta sempre operatore Fastweb (rimuoviamo la selezione)
+    setOperator('fastweb');
+  };
+
+  // Gestisce il tasto Enter nei campi data
+  const handleDateKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      handleApplyDateFilter();
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        console.log('[Reportistica] useEffect principale attivato:', { year, month, operator, from, to, includeZero });
+        setLoading(true);
+        setError(null);
+        const url = `/agente/reportistica?year=${year}&month=${month}&operator=${encodeURIComponent(operator)}&from=${from}&to=${to}&includeZero=${includeZero}`;
+        console.log('[Reportistica] Chiamando API principale:', url);
+        const res = await getProtectedData(url);
+        const root = res?.data || {};
+        const payload = root?.data ?? root; // supporta shape { success, data: {...} } oppure diretto
+        if (active) setData({
+          kpi_card: Array.isArray(payload.kpi_card) ? payload.kpi_card : [],
+          report_kpi: Array.isArray(payload.report_kpi) ? payload.report_kpi : [],
+          report_dealers: Array.isArray(payload.report_dealers) ? payload.report_dealers : [],
+          report_dealers_alt: Array.isArray(payload.report_dealers_alt) ? payload.report_dealers_alt : [],
+          province_distrib: Array.isArray(payload.province_distrib) ? payload.province_distrib : [],
+        });
+        console.log('[Reportistica] Dati aggregati aggiornati:', payload);
+
+        // Carica KPI unificati dal backend supermaster, filtrati sull'agente corrente
+        if (active && user?.agenteNome) {
+          const qs = new URLSearchParams({
+            year: String(year),
+            month: String(month),
+            agente: user.agenteNome,
+          });
+          try {
+            console.log('[Reportistica] Chiamando KPI agente:', qs.toString());
+            const kpiRes = await getProtectedData(`/agente/kpi?${qs.toString()}`);
+            const payloadKpi = kpiRes?.data || kpiRes || {};
+            if (active) setKpiAgent(payloadKpi);
+          } catch (kpiErr) {
+            console.warn('[Reportistica] KPI agente indisponibili:', kpiErr?.message || kpiErr);
+            if (active) setKpiAgent(null);
+          }
+        } else if (active) {
+          setKpiAgent(null);
+        }
+      } catch (e) {
+        console.error('Reportistica agente errore:', e);
+        if (active) setError(e.message || 'Errore nel caricamento');
+      } finally {
+        if (active) setLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [year, month, operator, from, to, includeZero]);
+
+  // Carica le ultime date di aggiornamento (Batch InseritoFW e FWEnergiaImporter)
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const res = await getProtectedData('/agente/reportistica/last-updates');
+        const d = res?.data?.data || res?.data || {};
+        if (!active) return;
+        setLastUpdates({ tlc: d.tlc || null, energy: d.energy || null });
+      } catch (e) {
+        // non bloccare la pagina per questo
+        console.warn('[Reportistica] last-updates errore:', e?.message);
+      }
+    })();
+    return () => { active = false; };
+  }, []);
+
+  // Fetch storico dealer quando campi validi (solo per operator fastweb)
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      if (operator !== 'fastweb') { if (active) setRangeData({ tab1: [], tab2: [], tab3: [], tab4: [] }); return; }
+      // esegui chiamata range SOLO quando il dealer è stato selezionato (dealer confermato)
+      if (!dealer || dealer.trim().length < 2) { if (active) setRangeData({ tab1: [], tab2: [], tab3: [], tab4: [] }); return; }
+      try {
+        setRangeLoading(true);
+        setRangeError(null);
+        const qs = new URLSearchParams({ from, to, dealer: dealer.trim(), includeZero });
+        const res = await getProtectedData(`/agente/reportistica/range?${qs.toString()}`);
+        const payload = res?.data || res || {};
+        if (active) setRangeData({
+          tab1: Array.isArray(payload.tab1) ? payload.tab1 : [],
+          tab2: Array.isArray(payload.tab2) ? payload.tab2 : [],
+          tab3: Array.isArray(payload.tab3) ? payload.tab3 : [],
+          tab4: Array.isArray(payload.tab4) ? payload.tab4 : [],
+        });
+      } catch (e) {
+        console.error('[Reportistica][range] errore:', e);
+        if (active) setRangeError(e.message || 'Errore storico dealer');
+      } finally {
+        if (active) setRangeLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [dealer, from, to, operator, includeZero]);
+
+  // Suggerimenti dealer basati sui dati aggregati caricati (report_dealers_alt)
+  const dealerSuggestions = useMemo(() => {
+    const q = (dealerQuery || '').trim().toLowerCase();
+    if (!q || q.length < 2) return [];
+    const rows = Array.isArray(data.report_dealers_alt) ? data.report_dealers_alt : [];
+    // Prendi la ragione sociale o Point
+    const get = (obj, key) => obj?.[key] ?? obj?.[String(key).toLowerCase()] ?? obj?.[String(key).toUpperCase()];
+    const names = rows
+      .map(r => (get(r, 'RagioneSociale') ?? get(r, 'Point') ?? '').toString())
+      .filter(Boolean);
+    // Unique e filtrati per include
+    const seen = new Set();
+    const matches = [];
+    for (const name of names) {
+      const norm = name.trim();
+      const key = norm.toUpperCase();
+      if (seen.has(key)) continue;
+      if (norm.toLowerCase().includes(q)) {
+        seen.add(key);
+        matches.push(norm);
+      }
+      if (matches.length >= 15) break; // limita a 15
+    }
+    return matches;
+  }, [dealerQuery, data.report_dealers_alt]);
+
+  const provinces = useMemo(() => {
+    const rows = data.province_distrib || [];
+    if (operator === 'sky') {
+      // Dataset SKY: righe con campi provincia + wifi_inseriti + mobili_inseriti + tv_inseriti
+      const detailsAll = rows;
+      const details = detailsAll.filter(r => (
+        Number(r.wifi_inseriti || 0) + Number(r.mobili_inseriti || 0) + Number(r.tv_inseriti || 0)
+      ) > 0);
+      const max = Math.max(1, ...details.map(r => (
+        Number(r.wifi_inseriti || 0) + Number(r.mobili_inseriti || 0) + Number(r.tv_inseriti || 0)
+      )));
+      return { details, max };
+    } else {
+      // Dataset Fastweb: righe con SortOrder e totali per categoria
+      const detailsAll = rows.filter(r => Number(r.SortOrder) === 2);
+      const details = detailsAll.filter(r => (
+        Number(r.TotaleFisso || 0) + Number(r.TotaleMobile || 0) + Number(r.TotaleEnergia || 0)
+      ) > 0);
+      const max = Math.max(1, ...details.map(r => (
+        Number(r.TotaleFisso || 0) + Number(r.TotaleMobile || 0) + Number(r.TotaleEnergia || 0)
+      )));
+      return { details, max };
+    }
+  }, [data.province_distrib, operator]);
+
+  const kpiRow = data.kpi_card?.[0];
+  const effectiveKpi = useMemo(() => {
+    if (operator === 'sky' || !kpiAgent) return null;
+    const fissiKpi = kpiAgent?.kpi?.tlcFissoInseriti;
+    const mobiliKpi = kpiAgent?.kpi?.tlcMobileInseriti;
+    const energiaKpi = kpiAgent?.kpi?.energiaInseriti;
+    const attivazioniMese = [fissiKpi, mobiliKpi, energiaKpi].every(v => typeof v === 'number')
+      ? Number(fissiKpi) + Number(mobiliKpi) + Number(energiaKpi)
+      : null;
+
+    return {
+      dealer_totali: kpiAgent?.kpi?.dealerTotali ?? kpiRow?.dealer_totali,
+      dealer_ingaggiati: kpiAgent?.kpi?.dealerIngaggiati ?? kpiRow?.dealer_ingaggiati,
+      tlc_fisso_inseriti: kpiAgent?.kpi?.tlcFissoInseriti ?? kpiRow?.tlc_fisso_inseriti,
+      tlc_mobile_inseriti: kpiAgent?.kpi?.tlcMobileInseriti ?? kpiRow?.tlc_mobile_inseriti,
+      energia_inseriti: kpiAgent?.kpi?.energiaInseriti ?? kpiRow?.energia_inseriti,
+      sim_ric_automatica: kpiAgent?.kpi?.tlc_mobile_ra_inseriti ?? kpiRow?.sim_ric_automatica,
+      sim_ric_pura: kpiAgent?.kpi?.tlc_mobile_rp_inseriti ?? kpiRow?.sim_ric_pura,
+      attivazioni_mese: attivazioniMese,
+    };
+  }, [kpiAgent, kpiRow, operator]);
+
+  const kpiToUse = operator === 'sky' ? kpiRow : effectiveKpi || kpiRow;
+  const fixedValue = (operator === 'sky') ? kpiRow?.wifi_inseriti : kpiToUse?.tlc_fisso_inseriti;
+  const mobileValue = (operator === 'sky') ? kpiRow?.mobili_inseriti : kpiToUse?.tlc_mobile_inseriti;
+  const energiaValue = (operator === 'sky') ? null : kpiToUse?.energia_inseriti;
+
+  return (
+    <DashboardLayout title="Reportistica">
+      <div className="space-y-4 mt-4">
+        {/* Badge Ultimo Aggiornamento */}
+        <div className="bg-white rounded-xl p-3 border border-gray-100 flex items-center justify-between">
+          <div className="text-sm text-gray-700 font-semibold">Reportistica Agente</div>
+          <div className="flex items-center gap-2">
+            <Badge label="Ultimo Aggiornamento TLC" value={formatItDate(lastUpdates.tlc)} color="blue" />
+            <Badge label="Ultimo aggiornamento ENERGY" value={formatItDate(lastUpdates.energy)} color="emerald" />
+          </div>
+        </div>
+        {/* Filtro periodo */}
+        <div className="bg-white rounded-xl p-4 border border-gray-100">
+          <div className="flex items-center gap-3 flex-wrap">
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">Dal</label>
+              <input 
+                type="date" 
+                value={fromTemp} 
+                onChange={(e) => setFromTemp(e.target.value)} 
+                onKeyPress={handleDateKeyPress}
+                className="rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm" 
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-600 mb-1">Al</label>
+              <input 
+                type="date" 
+                value={toTemp} 
+                onChange={(e) => setToTemp(e.target.value)} 
+                onKeyPress={handleDateKeyPress}
+                className="rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm" 
+              />
+            </div>
+            <div className="flex items-end">
+              <button
+                onClick={handleApplyDateFilter}
+                disabled={loading}
+                className="px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {loading ? 'Caricamento...' : 'Cerca'}
+              </button>
+            </div>
+            {loading && <div className="text-sm text-gray-500">Caricamento…</div>}
+            {error && <div className="text-sm text-red-600">{error}</div>}
+          </div>
+        </div>
+
+        {/* Filtro Dealer */}
+        <div className="bg-white rounded-xl p-4 border border-gray-100">
+          <div className="flex items-end gap-3 flex-wrap">
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input 
+                  type="radio" 
+                  name="dealerFilter" 
+                  checked={!dealer} 
+                  onChange={() => {
+                    setDealer('');
+                    setDealerQuery('');
+                    setShowSuggestions(false);
+                  }}
+                  className="text-blue-600"
+                />
+                TUTTI
+              </label>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input 
+                  type="radio" 
+                  name="dealerFilter" 
+                  checked={!!dealer} 
+                  onChange={() => {
+                    // L'utente deve selezionare un dealer specifico
+                  }}
+                  className="text-blue-600"
+                />
+                Dealer specifico
+              </label>
+            </div>
+            <div className="relative">
+              <label className="block text-xs text-gray-600 mb-1">Ragione Sociale</label>
+              <input
+                value={dealerQuery}
+                onChange={(e) => {
+                  setDealerQuery(e.target.value);
+                  setDealer(''); // invalida la selezione finché non si sceglie
+                  setShowSuggestions(true);
+                  setRangeError(null);
+                }}
+                onFocus={() => setShowSuggestions(true)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && dealerSuggestions.length > 0) {
+                    // se solo 1 match o si preme Enter, seleziona il primo
+                    const chosen = dealerSuggestions[0];
+                    setDealerQuery(chosen);
+                    setDealer(chosen);
+                    setShowSuggestions(false);
+                    e.preventDefault();
+                  }
+                }}
+                placeholder="Ragione Sociale"
+                className="rounded-lg border-gray-300 focus:border-blue-500 focus:ring-blue-500 text-sm w-64"
+              />
+              {/* Dropdown suggerimenti */}
+              {showSuggestions && dealerSuggestions.length > 0 && (
+                <div className="absolute z-10 mt-1 w-64 max-h-56 overflow-auto rounded-lg border border-gray-200 bg-white shadow">
+                  {dealerSuggestions.map((name) => (
+                    <button
+                      type="button"
+                      key={name}
+                      onClick={() => {
+                        setDealerQuery(name);
+                        setDealer(name);
+                        setShowSuggestions(false);
+                      }}
+                      className="block w-full text-left px-3 py-2 text-sm hover:bg-gray-50"
+                    >
+                      {name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {/* Messaggi guida/errore */}
+              {dealerQuery && !dealer && dealerSuggestions.length > 1 && (
+                <div className="text-[11px] text-amber-700 mt-1">Seleziona un dealer dall'elenco ({dealerSuggestions.length} risultati)</div>
+              )}
+              {dealerQuery && !dealer && dealerSuggestions.length === 0 && dealerQuery.length >= 2 && (
+                <div className="text-[11px] text-red-600 mt-1">Nessun dealer trovato per "{dealerQuery}"</div>
+              )}
+            </div>
+            {rangeLoading && <div className="text-sm text-gray-500">Caricamento storico…</div>}
+            {rangeError && <div className="text-sm text-red-600">{rangeError}</div>}
+          </div>
+        </div>
+
+        {/* RS0: CARD KPI - Nascondi quando è selezionato un dealer specifico */}
+        {!dealer && (
+          <section className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3">
+            <KpiTile label="Dealer totali" value={kpiToUse?.dealer_totali} />
+            <KpiTile label="Ingaggiati" value={kpiToUse?.dealer_ingaggiati} />
+            <KpiTile label={operator === 'sky' ? 'Fisso inseriti' : 'Fisso inseriti'} value={fixedValue} />
+            <KpiTile label={operator === 'sky' ? 'Mobile inseriti' : 'Mobile inseriti'} value={mobileValue} />
+            {operator !== 'sky' && (
+              <KpiTile label="Energia inseriti" value={energiaValue} />
+            )}
+            {operator !== 'sky' && (
+              <KpiTile label="RICARICHE AUTOMATICHE" value={kpiToUse?.sim_ric_automatica} />
+            )}
+          </section>
+        )}
+
+        {/* RS2b Dealers Tabella - dataset alternativo (report_dealers_alt) */}
+        <section className="bg-white rounded-xl p-4 border border-gray-100">
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="text-sm font-semibold text-gray-900">Dettaglio Dealer</h3>
+            <label className="flex items-center gap-2 text-xs text-gray-700">
+              <input type="checkbox" className="rounded border-gray-300" checked={includeZero} onChange={(e)=>setIncludeZero(e.target.checked)} />
+              Includi dealer con tutte le colonne a 0
+            </label>
+          </div>
+          <div className="overflow-auto max-h-[420px]">
+            {(() => {
+              // Se è selezionato un dealer specifico, usa i dati dal range (più precisi per le date)
+              // Altrimenti usa i dati principali
+              let dealers;
+              
+              if (dealer && dealer.trim() && rangeData.tab2 && rangeData.tab2.length > 0) {
+                // Usa dati dal range (filtrati per date precise)
+                dealers = rangeData.tab2.map(d => ({
+                  RagioneSociale: d.RagioneSociale || '',
+                  Fisso: d.tlc_fisso_inseriti || 0,
+                  'Conv RES': d.conv_res || 0,
+                  'Conv BUS': d.conv_bus || 0,
+                  Mobile: d.tlc_mobile_inseriti || 0,
+                  'Mobili R. Automatica': d.tlc_mobile_automatiche || 0,
+                  Energia: d.energia_inseriti || 0
+                }));
+              } else {
+                // Usa dati principali (aggregati per mese)
+                dealers = Array.isArray(data.report_dealers_alt) ? data.report_dealers_alt : [];
+                
+                // Applica filtro dealer se selezionato
+                if (dealer && dealer.trim()) {
+                  const dealerFilter = dealer.trim().toLowerCase();
+                  dealers = dealers.filter(d => 
+                    (d.RagioneSociale || '').toLowerCase().includes(dealerFilter)
+                  );
+                }
+              }
+              
+              console.log('[Frontend] Dealers ricevuti:', dealers.length);
+              if (dealers.length > 0) {
+                console.log('[Frontend] Primo dealer:', dealers[0]);
+              }
+              
+              if (dealers.length === 0) {
+                return (
+                  <div className="text-center py-8 text-gray-500">
+                    {dealer && dealer.trim() 
+                      ? `Nessun dealer trovato per "${dealer}"`
+                      : 'Nessun dealer trovato per i criteri selezionati'
+                    }
+                  </div>
+                );
+              }
+
+              return (
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50 text-gray-700 sticky top-0 z-10">
+                    <tr>
+                      <Th>RagioneSociale</Th>
+                      <Th>Fisso</Th>
+                      <Th>Conv RES</Th>
+                      <Th>Conv BUS</Th>
+                      <Th>Mobile</Th>
+                      <Th>Mobili R. Automatica</Th>
+                      <Th>Energia</Th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {dealers.map((dealer, i) => (
+                      <tr key={i} className="odd:bg-white even:bg-gray-50">
+                        <Td>{dealer.RagioneSociale || ''}</Td>
+                        <Td>{dealer.Fisso || 0}</Td>
+                        <Td>{dealer['Conv RES'] || 0}</Td>
+                        <Td>{dealer['Conv BUS'] || 0}</Td>
+                        <Td>{dealer.Mobile || 0}</Td>
+                        <Td><span className="font-semibold">{dealer['Mobili R. Automatica'] || 0}</span></Td>
+                        <Td>{dealer.Energia || 0}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              );
+            })()}
+          </div>
+        </section>
+
+        {/* RS3 Province: Grafico barre orizzontali - Nascondi quando è selezionato un dealer specifico */}
+        {!dealer && (
+          <section className="bg-white rounded-xl p-4 border border-gray-100">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Distribuzione per provincia</h3>
+            <div className="space-y-2">
+              {provinces.details.map((p) => {
+                const total = (operator === 'sky')
+                  ? (Number(p.wifi_inseriti || 0) + Number(p.mobili_inseriti || 0) + Number(p.tv_inseriti || 0))
+                  : (Number(p.TotaleFisso||0)+Number(p.TotaleMobile||0)+Number(p.TotaleEnergia||0));
+                const w = Math.max(4, Math.round((total / provinces.max) * 100));
+                return (
+                  <div key={p.Provincia} className="flex items-center gap-3">
+                    <div className="w-16 text-xs text-gray-700 font-medium">{p.Provincia}</div>
+                    <div className="flex-1 h-4 bg-gray-100 rounded">
+                      <div className="h-4 bg-blue-500 rounded" style={{ width: `${w}%` }} title={`${total} totali`}></div>
+                    </div>
+                    <div className="w-10 text-right text-xs text-gray-700">{total}</div>
+                  </div>
+                );
+              })}
+              {provinces.details.length === 0 && (
+                <div className="text-sm text-gray-500">Nessun dato</div>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Storico Dealer - Rimosso quando è selezionato un dealer specifico */}
+        {false && operator === 'fastweb' && dealer && dealer.trim().length >= 2 && (
+          <section className="bg-white rounded-xl p-4 border border-gray-100">
+            <h3 className="text-sm font-semibold text-gray-900 mb-3">Storico Dealer</h3>
+
+            {/* Tab1: KPI range */}
+            {rangeData.tab1?.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-4">
+                {(() => {
+                  const r = rangeData.tab1[0];
+                  return (
+                    <>
+                      <KpiTile label="Point totali" value={r.totale_point} />
+                      <KpiTile label="Ingaggiati" value={r.point_ingaggiati} />
+                      <KpiTile label="Fisso inseriti" value={r.tlc_fisso_inseriti} />
+                      <KpiTile label="Mobile inseriti" value={r.tlc_mobile_inseriti} />
+                      <KpiTile label="Energia inseriti" value={r.energia_inseriti} />
+                      <KpiTile label="Ric. automatiche" value={r.tlc_mobile_automatiche} />
+                    </>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* Tab2: singolo dealer (riepilogo range) */}
+            {rangeData.tab2?.length > 0 && (
+              <div className="mb-4 overflow-auto">
+                {(() => {
+                  const allRows = Array.isArray(rangeData.tab2) ? rangeData.tab2 : [];
+                  const filteredRows = allRows.filter(r => String(r?.Ingaggiato ?? '').trim().toUpperCase() === 'SI');
+                  return (
+                    <div className="flex items-center justify-between mb-2 text-xs text-gray-600">
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-100 font-medium">
+                          {filteredRows.length}/{allRows.length} ingaggiati
+                        </span>
+                      </div>
+                    </div>
+                  );
+                })()}
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50 text-gray-700">
+                    <tr>
+                      <Th>RagioneSociale</Th>
+                      <Th>Fisso</Th>
+                      <Th>Conv RES</Th>
+                      <Th>Conv BUS</Th>
+                      <Th>Mobile</Th>
+                      <Th>Mobili R. Automatica</Th>
+                      <Th>Energia</Th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {(Array.isArray(rangeData.tab2) ? rangeData.tab2 : [])
+                      .filter(r => String(r?.Ingaggiato ?? '').trim().toUpperCase() === 'SI')
+                      .map((r, i) => (
+                      <tr key={i} className="odd:bg-white even:bg-gray-50">
+                        <Td>{r.RagioneSociale}</Td>
+                        <Td>{r.tlc_fisso_inseriti}</Td>
+                        <Td>{r.conv_res}</Td>
+                        <Td>{r.conv_bus}</Td>
+                        <Td>{r.tlc_mobile_inseriti}</Td>
+                        <Td><span className="font-semibold">{r.tlc_mobile_automatiche}</span></Td>
+                        <Td>{r.energia_inseriti}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Tab3: breakdown mensile */}
+            {rangeData.tab3?.length > 0 && (
+              <div className="overflow-auto">
+                <table className="min-w-full text-sm">
+                  <thead className="bg-gray-50 text-gray-700">
+                    <tr>
+                      <Th>Mese</Th>
+                      <Th>Fisso</Th>
+                      <Th>Conv RES</Th>
+                      <Th>Conv BUS</Th>
+                      <Th>Mobile</Th>
+                      <Th>Mobili R. Automatica</Th>
+                      <Th>Energia</Th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-100">
+                    {rangeData.tab3.map((r, i) => (
+                      <tr key={i} className="odd:bg-white even:bg-gray-50">
+                        <Td>{r.ym}</Td>
+                        <Td>{r.tlc_fisso_inseriti}</Td>
+                        <Td>{r.conv_res}</Td>
+                        <Td>{r.conv_bus}</Td>
+                        <Td>{r.tlc_mobile_inseriti}</Td>
+                        <Td><span className="font-semibold">{r.tlc_mobile_automatiche}</span></Td>
+                        <Td>{r.energia_inseriti}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
+      </div>
+    </DashboardLayout>
+  );
+}
+
+function KpiTile({ label, value }) {
+  return (
+    <div className="bg-white rounded-xl p-3 border border-gray-100">
+      <div className="text-xs text-gray-600">{label}</div>
+      <div className="text-xl font-bold text-gray-900">{value ?? '-'}</div>
+    </div>
+  );
+}
+
+function Th({ children }) {
+  return <th className="px-3 py-2 text-left text-xs font-semibold">{children}</th>;
+}
+function Td({ children }) {
+  return <td className="px-3 py-2 whitespace-nowrap">{children}</td>;
+}
+
+function formatDate(d) {
+  if (!d) return '';
+  try {
+    const dt = new Date(d);
+    if (isNaN(dt.getTime())) return String(d);
+    return dt.toISOString().slice(0, 10);
+  } catch { return String(d); }
+}
+
+// Formatta una data in GG/MM/AAAA.
+function formatItDate(d) {
+  if (!d) return '-';
+  try {
+    const dt = new Date(d);
+    if (!isNaN(dt.getTime())) {
+      const dd = String(dt.getDate()).padStart(2, '0');
+      const mm = String(dt.getMonth() + 1).padStart(2, '0');
+      const yyyy = dt.getFullYear();
+      return `${dd}/${mm}/${yyyy}`;
+    }
+    // fallback: prova a leggere pattern YYYYMMDD o YYYY-MM-DD
+    const s = String(d);
+    const m = s.match(/^(\d{4})[-/]?(\d{2})[-/]?(\d{2})/);
+    if (m) return `${m[3]}/${m[2]}/${m[1]}`;
+    return s;
+  } catch {
+    return '-';
+  }
+}
+
+function Badge({ label, value, color = 'blue' }) {
+  const classes = {
+    blue: 'bg-blue-50 text-blue-700 border-blue-100',
+    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-100',
+    amber: 'bg-amber-50 text-amber-700 border-amber-100',
+    gray: 'bg-gray-50 text-gray-700 border-gray-100',
+  };
+  const cls = classes[color] || classes.blue;
+  return (
+    <div className={`inline-flex items-center gap-2 px-2 py-1 rounded-full text-xs border ${cls}`}>
+      <span className="font-medium whitespace-nowrap">{label}</span>
+      <span className="font-semibold">{value ?? '-'}</span>
+    </div>
+  );
+}

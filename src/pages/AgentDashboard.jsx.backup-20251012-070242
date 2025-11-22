@@ -1,0 +1,101 @@
+import { useEffect, useState } from 'react';
+import { useAuth } from '../contexts/AuthContext';
+import DashboardLayout from '../components/layout/DashboardLayout';
+import StatsCard from '../components/common/StatsCard';
+import NewsCard from '../components/common/NewsCard';
+import RecentActivations from '../components/dealer/RecentActivations';
+import RecentOrders from '../components/dealer/RecentOrders';
+import Objectives from '../components/dealer/Objectives';
+import MonthlyTrend from '../components/dealer/MonthlyTrend';
+import { getProtectedData } from '../services/api';
+
+export default function AgentDashboard() {
+  const [attivazioniOggi, setAttivazioniOggi] = useState(null);
+  const [ordiniAttesa, setOrdiniAttesa] = useState(null);
+  const [dealerAttivi, setDealerAttivi] = useState(null);
+  const { user } = useAuth();
+
+  useEffect(() => {
+    let mounted = true;
+    async function loadData() {
+      try {
+        const year = new Date().getFullYear();
+        const month = new Date().getMonth() + 1;
+        // Prende il nome agente dal token decodificato (agentenome) con fallback a name
+        const agente = encodeURIComponent((user?.agentenome || user?.name || '').toString());
+        const [a, o, r] = await Promise.all([
+          getProtectedData('/agente/attivazioni-oggi'),
+          getProtectedData('/agente/ordini-attesa-pagamento-count'),
+          getProtectedData(`/agente/reportistica?year=${year}&month=${month}${agente ? `&agente=${agente}` : ''}`)
+        ]);
+        if (!mounted) return;
+        setAttivazioniOggi(a?.totale ?? 0);
+        setOrdiniAttesa(o?.totale ?? 0);
+        const kpiCard = r?.data?.kpi_card?.[0];
+        setDealerAttivi(kpiCard?.dealer_ingaggiati ?? 0);
+      } catch (err) {
+        console.error('[AgentDashboard] Errore caricamento KPI:', err);
+        if (mounted) {
+          setAttivazioniOggi(0);
+          setOrdiniAttesa(0);
+          setDealerAttivi(0);
+        }
+      }
+    }
+    loadData();
+    return () => { mounted = false; };
+  }, [user?.agentenome, user?.name]);
+
+  const statsData = [
+    // Sostituita la prima card con NewsCard
+    { title: 'Ordini in Attesa di pagamento', value: ordiniAttesa ?? '—', subtitle: 'Stato ordini = 0', icon: '📦', trend: 'neutral', trendValue: '', color: 'orange' },
+    { title: 'Dealer Attivi', value: dealerAttivi ?? '—', subtitle: 'Dealer ingaggiati (mese corrente)', icon: '👥', trend: 'neutral', trendValue: '', color: 'purple' },
+  ];
+
+  return (
+    <DashboardLayout>
+      <div className="space-y-4">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {/* News per Agente (sostituisce Attivazioni Oggi) */}
+          <NewsCard scope="agente" agente={(user?.agentenome || user?.name || '').toString()} title="News" maxItems={3} />
+
+          {/* Statistiche principali per Agente (restanti) */}
+          {statsData
+            .filter((s) => s.title !== 'Fatturato Mensile')
+            .map((stat, index) => (
+              <StatsCard
+                key={index}
+                title={stat.title}
+                value={String(stat.value)}
+                subtitle={stat.subtitle}
+                icon={stat.icon}
+                trend={stat.trend}
+                trendValue={stat.trendValue}
+                color={stat.color}
+              />
+            ))}
+        </div>
+
+        {/* Sezioni principali */}
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          {/* Obiettivi */}
+          <Objectives />
+
+          {/* Andamento Mensile */}
+          <MonthlyTrend />
+        </div>
+
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+          {/* Ultime Attivazioni */}
+          <RecentActivations />
+
+          {/* Ultimi Ordini */}
+          <RecentOrders />
+        </div>
+
+        {/* Rimosso widget/modale Plafond per Agenti */}
+      </div>
+    </DashboardLayout>
+  );
+}

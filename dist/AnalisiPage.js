@@ -1,0 +1,1 @@
+import{j as r}from"./vendor.js";import{S as t}from"./Topbar2.js";import{A as e}from"./Analisi.js";import"./index.js";import"./DashboardLayout.js";import"./logo2.js";function n(){return r.jsxs(r.Fragment,{children:[r.jsx(t,{}),r.jsx(e,{embed:!0})]})}export{n as default};

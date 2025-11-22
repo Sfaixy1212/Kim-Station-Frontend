@@ -1,0 +1,36 @@
+{
+  "brand": {"title": "Fastweb Device (Rateizzazioni)", "logo": "/fastweb_vodafone-logo.svg", "subtitle": "Settembre 2025"},
+  "sections": [
+    {
+      "id": "regole",
+      "title": "Regole di Gara Vendita Telefoni",
+      "bullets": [
+        "Periodo: 01/09/2025 – 30/09/2025",
+        "Valide tutte le PDA delle offerte indicate nel Piano di Incentivazione del Mese",
+        "Per ogni telefono venduto abbinato alla SIM mobile in rateale o finanziato, si eroga il relativo compenso",
+        "In ONE SHOT il Dealer può rivendere con cassa o finanziarie, associando IMEI alla SIM contestuale"
+      ]
+    },
+    {
+      "id": "tabella",
+      "title": "Offerta Fastweb con SIM (ricarica automatica inclusa)",
+      "table": {
+        "columns": ["Fasce", "Rateale Fastweb", "Finanziato Findomestic", "One Shot (Sim + Device)"],
+        "rows": [
+          ["LOW", "€ 60", "ND", "€ 60"],
+          ["MEDIUM – (<400€)", "€ 60", "€ 85", "ND"],
+          ["MEDIUM + (>400€)", "ND", "€ 85", "ND"],
+          ["HIGH", "ND", "€ 105", "ND"],
+          ["SAMSUNG S25 Ultra 256 GB", "ND", "€ 170", "€ 120"],
+          ["APPLE", "ND", "€ 135", "€ 135"],
+          ["APPLE rigenerati", "€ 60", "€ 60", "€ 60"]
+        ]
+      },
+      "footnotes": [
+        "Prenotazione/acquisto device tramite Kim Station",
+        "Possibile acquisto anticipato anche se proposto con Findomestic",
+        "Il Dealer può acquistare i device quando necessario o preventivamente"
+      ]
+    }
+  ]
+}
