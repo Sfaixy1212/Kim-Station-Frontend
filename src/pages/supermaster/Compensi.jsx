@@ -444,35 +444,37 @@ export default function Compensi() {
   const openBreakdown = async (type, title) => {
     try {
       setBreakdownOpen(true);
-      setBreakdownData({ loading: true, rows: [], title, type });
+      setBreakdownData({ loading: true, rows: [], title, type, breakdown: null });
       
       const qp = new URLSearchParams();
       const monthStartParam = computeMonthStartParam();
       if (monthStartParam) qp.set('monthStart', monthStartParam);
       if (selectedAgente) qp.set('agente', selectedAgente);
       
-      // Chiama fn_compensi_agente_breakdown filtrata per sezione
+      // ✅ Usa il nuovo endpoint con breakdown pulito
       const res = await getProtectedData(`/compensi/breakdown?${qp.toString()}`);
       const list = Array.isArray(res?.rows) ? res.rows : [];
+      const breakdown = res?.breakdown || null;
       
-      // Filtra per tipo di breakdown
-      const filtered = list.filter(row => {
+      // Filtra per tipo di breakdown (se richiesto specifico)
+      const filtered = type === 'EURO_TOTALE' ? list : list.filter(row => {
         const sezione = String(row.sezione || '').toUpperCase();
         switch(type) {
           case 'EURO_RA': return sezione.includes('MOBILE_RA');
-          case 'EURO_FISSI': return sezione.includes('PRODOTTO') && String(row.dettaglio || '').includes('FISSO');
-          case 'EURO_ENERGY': return sezione.includes('PRODOTTO') && String(row.dettaglio || '').includes('ENERGY');
-          case 'EURO_SKY': return sezione.includes('PRODOTTO') && String(row.dettaglio || '').includes('SKY');
+          case 'EURO_FISSI': return sezione.includes('PRODOTTO') && String(row.sottoVoce || '').includes('FISSO');
+          case 'EURO_ENERGY': return sezione.includes('PRODOTTO') && String(row.sottoVoce || '').includes('ENERGY');
+          case 'EURO_SKY': return sezione.includes('PRODOTTO') && String(row.sottoVoce || '').includes('SKY');
           case 'EURO_SIM': return sezione.includes('SIM_BASE');
           case 'EURO_BONUS': return sezione.includes('BONUS');
           case 'EURO_CONTRIBUTO': return sezione.includes('CONTRIBUTO');
+          case 'EURO_ENI': return sezione.includes('ENI');
           default: return true;
         }
       });
       
-      setBreakdownData({ loading: false, rows: filtered, title, type });
+      setBreakdownData({ loading: false, rows: filtered, title, type, breakdown });
     } catch (e) {
-      setBreakdownData({ loading: false, rows: [], title, type });
+      setBreakdownData({ loading: false, rows: [], title, type, breakdown: null });
       toast.error('Errore nel caricamento breakdown');
     }
   };
@@ -950,54 +952,65 @@ export default function Compensi() {
                   </div>
                 ) : (
                   <div className="space-y-4">
-                    {/* Riepilogo */}
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                    {/* Riepilogo con totale corretto */}
+                    <div className="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-lg p-4">
                       <div className="flex items-center justify-between">
-                        <div className="text-sm font-medium text-blue-900">Totale {breakdownData.title}</div>
-                        <div className="text-lg font-bold text-blue-900">
-                          {formatEuro(breakdownData.rows.reduce((sum, r) => sum + ((Number(r.qty) || 0) * (Number(r.euroUnit) || 0)), 0))}
+                        <div className="text-sm font-medium text-emerald-800">TOTALE COMPENSO</div>
+                        <div className="text-2xl font-bold text-emerald-700">
+                          {formatEuro(breakdownData.breakdown?.totale || breakdownData.rows.reduce((sum, r) => sum + (Number(r.euro) || 0), 0))}
                         </div>
                       </div>
-                      <div className="text-xs text-blue-700 mt-1">
-                        {breakdownData.rows.length} elementi • {formatInt(breakdownData.rows.reduce((sum, r) => sum + Number(r.qty || 0), 0))} quantità totale
+                      <div className="text-xs text-emerald-600 mt-1">
+                        {breakdownData.rows.length} voci di compenso
                       </div>
                     </div>
 
-                    {/* Tabella dettagli */}
+                    {/* Tabella dettagli pulita */}
                     <div className="border rounded-lg overflow-hidden">
                       <table className="min-w-full text-sm">
                         <thead className="bg-gray-50 border-b">
                           <tr>
-                            <th className="px-4 py-3 text-left font-medium text-gray-700">Dettaglio</th>
+                            <th className="px-4 py-3 text-left font-medium text-gray-700">Voce</th>
                             <th className="px-4 py-3 text-center font-medium text-gray-700">Qty</th>
                             <th className="px-4 py-3 text-right font-medium text-gray-700">€ Unit</th>
                             <th className="px-4 py-3 text-right font-medium text-gray-700">€ Totale</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-100">
-                          {breakdownData.rows.map((row, idx) => (
-                            <tr key={idx} className="hover:bg-gray-50">
-                              <td className="px-4 py-3">
-                                <div className="font-medium text-gray-900">{row.dettaglio || '—'}</div>
-                                {row.sottoVoce && (
-                                  <div className="text-xs text-gray-500 mt-1">
-                                    {row.sezione === 'MOBILE_RA' && (
-                                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                                        String(row.sottoVoce).includes('CONV') ? 'bg-blue-100 text-blue-800' : 'bg-purple-100 text-purple-800'
-                                      }`}>
-                                        {String(row.sottoVoce).includes('CONV') ? '🤝 Convergenza' : '📱 OnlyMobile'}
-                                      </span>
-                                    )}
-                                    {row.sezione !== 'MOBILE_RA' && row.sottoVoce}
-                                  </div>
-                                )}
-                              </td>
-                              <td className="px-4 py-3 text-center font-mono">{formatInt(row.qty)}</td>
-                              <td className="px-4 py-3 text-right font-mono">{formatEuro(row.euroUnit)}</td>
-                              <td className="px-4 py-3 text-right font-semibold">{formatEuro((Number(row.qty) || 0) * (Number(row.euroUnit) || 0))}</td>
-                            </tr>
-                          ))}
+                          {breakdownData.rows.map((row, idx) => {
+                            // Colore badge per sezione
+                            const sezioneBadge = {
+                              'PRODOTTO': 'bg-blue-100 text-blue-800',
+                              'MOBILE_RA': 'bg-purple-100 text-purple-800',
+                              'SIM_BASE': 'bg-amber-100 text-amber-800',
+                              'ENI': 'bg-orange-100 text-orange-800',
+                              'BONUS': 'bg-green-100 text-green-800',
+                              'CONTRIBUTO': 'bg-gray-100 text-gray-800',
+                            }[row.sezione] || 'bg-gray-100 text-gray-800';
+                            
+                            return (
+                              <tr key={idx} className="hover:bg-gray-50">
+                                <td className="px-4 py-3">
+                                  <div className="font-medium text-gray-900">{row.dettaglio || row.sottoVoce || '—'}</div>
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium mt-1 ${sezioneBadge}`}>
+                                    {row.sezione}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-center font-mono">{formatInt(row.qty)}</td>
+                                <td className="px-4 py-3 text-right font-mono">{row.euroUnit ? formatEuro(row.euroUnit) : '—'}</td>
+                                <td className="px-4 py-3 text-right font-semibold text-gray-900">{formatEuro(row.euro || 0)}</td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
+                        <tfoot className="bg-gray-50 border-t-2">
+                          <tr>
+                            <td colSpan="3" className="px-4 py-3 text-right font-semibold text-gray-700">TOTALE</td>
+                            <td className="px-4 py-3 text-right font-bold text-lg text-emerald-700">
+                              {formatEuro(breakdownData.breakdown?.totale || breakdownData.rows.reduce((sum, r) => sum + (Number(r.euro) || 0), 0))}
+                            </td>
+                          </tr>
+                        </tfoot>
                       </table>
                     </div>
                   </div>

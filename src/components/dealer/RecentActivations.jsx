@@ -442,21 +442,23 @@ export default function RecentActivations() {
         if (!Array.isArray(arr) || arr.length === 0) return [];
         return arr.map(r => {
           // Dealer: cerca chiavi comuni o con regex generica
-          let dealer = getKey(r, ['Dealer', 'dealer', 'NomeDealer', 'nomeDealer', 'nome_dealer', 'RagioneSociale', 'ragione_sociale'], undefined);
+          // NOTA: La stored procedure attivazionimensilidealeragente restituisce "DealerName"
+          let dealer = getKey(r, ['DealerName', 'Dealer', 'dealer', 'NomeDealer', 'nomeDealer', 'nome_dealer', 'RagioneSociale', 'ragione_sociale'], undefined);
           if (!dealer) {
             const dk = Object.keys(r).find(k => /dealer|ragione.?sociale|nome.?cliente/i.test(k));
             dealer = dk ? r[dk] : '-';
           }
           // Conteggi: prova chiavi note, altrimenti scansiona per regex
+          // NOTA: La stored procedure restituisce "FW FISSI", "FW MOBILI", "FW ENERGY" (con spazio)
           const asNum = (v) => {
             const n = Number(v);
             return isNaN(n) ? 0 : n;
           };
-          const fissi = asNum(getKey(r, ['FWFissi', 'fw_fissi', 'FW_FISSI', 'Fissi', 'fissi', 'FW Fissi'], undefined));
-          const mobili = asNum(getKey(r, ['FWMobili', 'fw_mobili', 'FW_MOBILI', 'Mobili', 'mobili', 'FW Mobili'], undefined));
-          const energy = asNum(getKey(r, ['FWEnergy', 'fw_energy', 'FW_ENERGY', 'Energy', 'energy', 'FW Energy'], undefined));
+          const fissi = asNum(getKey(r, ['FW FISSI', 'FWFissi', 'fw_fissi', 'FW_FISSI', 'Fissi', 'fissi', 'FW Fissi'], undefined));
+          const mobili = asNum(getKey(r, ['FW MOBILI', 'FWMobili', 'fw_mobili', 'FW_MOBILI', 'Mobili', 'mobili', 'FW Mobili'], undefined));
+          const energy = asNum(getKey(r, ['FW ENERGY', 'FWEnergy', 'fw_energy', 'FW_ENERGY', 'Energy', 'energy', 'FW Energy'], undefined));
           const eni = asNum(getKey(r, ['ENI', 'eni', 'Eni'], undefined));
-          const sky = asNum(getKey(r, ['Sky', 'SKY', 'sky'], undefined));
+          const sky = asNum(getKey(r, ['SKY', 'Sky', 'sky'], undefined));
           const hasAllKnown = [fissi, mobili, energy, eni, sky].some(v => v !== 0);
           if (!hasAllKnown) {
             // fallback regex-based
@@ -482,7 +484,7 @@ export default function RecentActivations() {
         const hasMeaningful = mappedAgg.some(r => (r.fissi + r.mobili + r.energy + r.eni + r.sky) > 0) || mappedAgg.length > 0;
         if (hasMeaningful) {
           setIsAggregated(true);
-          setAggRows(mappedAgg.slice(0, 10));
+          setAggRows(mappedAgg);
           setRows([]);
           return;
         }
@@ -491,7 +493,7 @@ export default function RecentActivations() {
         if (looksDealerish) {
           const mappedAgg2 = tryMapAggregated(data).filter(r => r.dealer && r.dealer !== '-');
           setIsAggregated(true);
-          setAggRows(mappedAgg2.slice(0, 10));
+          setAggRows(mappedAgg2);
           setRows([]);
           return;
         }
@@ -505,7 +507,7 @@ export default function RecentActivations() {
         if (looksAggregated) {
           const mappedAgg = tryMapAggregated(data);
           setIsAggregated(true);
-          setAggRows(mappedAgg.slice(0, 10));
+          setAggRows(mappedAgg);
           setRows([]);
           return;
         }
@@ -550,7 +552,7 @@ export default function RecentActivations() {
         if (da && db) return db - da;
         return 0;
       });
-      setRows(prioritized.slice(0, 10));
+      setRows(prioritized.slice(0, 20));
     } catch (e) {
       console.error('Errore fetch ultime attivazioni:', e);
       setError(e.message || 'Errore di caricamento');
@@ -1046,7 +1048,7 @@ export default function RecentActivations() {
         </div>
       )}
       {!loading && !error && (
-        <div className="overflow-x-auto -mx-4 sm:mx-0">
+        <div className="overflow-x-auto overflow-y-auto max-h-[400px] -mx-4 sm:mx-0">
           {isAggregated ? (
             <table className="min-w-[640px] sm:min-w-full table-fixed">
               <thead>

@@ -58,21 +58,40 @@ function ObiettiviCards() {
       {
         title: 'FISSI',
         summary: buildProg(prog.fissiAttuali, fissiTotale),
-        details: [
-          { label: 'Start', actual: prog.fissiStart || 0, percent: calcPercent(prog.fissiStart, fissiTotAttivati), showTarget: false },
-          { label: 'Pro', actual: prog.fissiPro || 0, percent: calcPercent(prog.fissiPro, fissiTotAttivati), showTarget: false },
-          { label: 'Ultra', actual: prog.fissiUltra || 0, percent: calcPercent(prog.fissiUltra, fissiTotAttivati), showTarget: false },
-        ].filter(d => d.actual > 0)
+        details: (prog.fissoDettaglio && prog.fissoDettaglio.length > 0)
+          ? prog.fissoDettaglio.map(d => ({
+              label: d.offerta,
+              actual: d.conteggio,
+              percent: calcPercent(d.conteggio, prog.fissiAttuali),
+              showTarget: false
+            }))
+          : [
+              { label: 'Start', actual: prog.fissiStart || 0, percent: calcPercent(prog.fissiStart, fissiTotAttivati), showTarget: false },
+              { label: 'Pro', actual: prog.fissiPro || 0, percent: calcPercent(prog.fissiPro, fissiTotAttivati), showTarget: false },
+              { label: 'Ultra', actual: prog.fissiUltra || 0, percent: calcPercent(prog.fissiUltra, fissiTotAttivati), showTarget: false },
+            ].filter(d => d.actual > 0)
       },
       {
         title: 'MOBILI',
         summary: buildProg(prog.mobileAttuali, mobileTotale),
         details: [
-          { label: 'Start', actual: prog.mobileStart || 0, percent: calcPercent(prog.mobileStart, mobiliTotAttivati), showTarget: false },
-          { label: 'Pro', actual: prog.mobilePro || 0, percent: calcPercent(prog.mobilePro, mobiliTotAttivati), showTarget: false },
-          { label: 'Ultra', actual: prog.mobileUltra || 0, percent: calcPercent(prog.mobileUltra, mobiliTotAttivati), showTarget: false },
+          // Dettaglio offerte mobile con nomi reali
+          ...((prog.mobileDettaglio && prog.mobileDettaglio.length > 0)
+            ? prog.mobileDettaglio.map(d => ({
+                label: d.offerta,
+                actual: d.conteggio,
+                percent: calcPercent(d.conteggio, prog.mobileAttuali),
+                showTarget: false
+              }))
+            : [
+                { label: 'Start', actual: prog.mobileStart || 0, percent: calcPercent(prog.mobileStart, mobiliTotAttivati), showTarget: false },
+                { label: 'Pro', actual: prog.mobilePro || 0, percent: calcPercent(prog.mobilePro, mobiliTotAttivati), showTarget: false },
+                { label: 'Ultra', actual: prog.mobileUltra || 0, percent: calcPercent(prog.mobileUltra, mobiliTotAttivati), showTarget: false },
+              ].filter(d => d.actual > 0)
+          ),
+          // Sempre mostra % RA e Convergenze
           { label: '% RA', actual: prog.mobilePercentRA || 0, unit: '%', showTarget: false, isRAPercentage: true },
-          { label: 'Convergenze', actual: prog.convergenzaRES || 0, percent: calcPercent(prog.convergenzaRES, mobiliTotAttivati), showTarget: false },
+          { label: 'Convergenze', actual: prog.convergenzaRES || 0, percent: calcPercent(prog.convergenzaRES, prog.mobileAttuali), showTarget: false },
         ].filter(d => d.isRAPercentage || d.actual > 0)
       },
       {
@@ -159,18 +178,16 @@ export default function AgentDashboard() {
       try {
         const year = new Date().getFullYear();
         const month = new Date().getMonth() + 1;
-        // Prende il nome agente dal token decodificato (agentenome) con fallback a name
-        const agente = encodeURIComponent((user?.agentenome || user?.name || '').toString());
-        const [a, o, r] = await Promise.all([
+        const [a, obiettivi] = await Promise.all([
           getProtectedData('/agente/attivazioni-oggi'),
-          getProtectedData('/agente/ordini-attesa-pagamento-count'),
-          getProtectedData(`/agente/reportistica?year=${year}&month=${month}${agente ? `&agente=${agente}` : ''}`)
+          getProtectedData(`/agente/obiettivi-compensi-v2?year=${year}&month=${month}`)  // ✅ Usa V5
         ]);
         if (!mounted) return;
         setAttivazioniOggi(a?.totale ?? 0);
-        setOrdiniAttesa(o?.totale ?? 0);
-        const kpiCard = r?.data?.kpi_card?.[0];
-        setDealerAttivi(kpiCard?.dealer_ingaggiati ?? 0);
+        // ✅ Usa SIM_VENDUTE dalla V5
+        setOrdiniAttesa(obiettivi?.progressi?.simVendute ?? 0);
+        // ✅ Usa dealerIngaggiati dalla V5 (include FW + SKY + ENI)
+        setDealerAttivi(obiettivi?.progressi?.dealerIngaggiati ?? 0);
       } catch (err) {
         console.error('[AgentDashboard] Errore caricamento KPI:', err);
         if (mounted) {
@@ -185,8 +202,8 @@ export default function AgentDashboard() {
   }, [user?.agentenome, user?.name]);
 
   const statsData = [
-    // Sostituita la prima card con NewsCard
-    { title: 'Ordini in Attesa di pagamento', value: ordiniAttesa ?? '—', subtitle: 'Stato ordini = 0', icon: '📦', trend: 'neutral', trendValue: '', color: 'orange' },
+    // ✅ SIM Vendute invece di Ordini in Attesa
+    { title: 'SIM Vendute', value: ordiniAttesa ?? '—', subtitle: 'Mese corrente', icon: '📱', trend: 'neutral', trendValue: '', color: 'blue' },
     { title: 'Dealer Attivi', value: dealerAttivi ?? '—', subtitle: 'Dealer ingaggiati (mese corrente)', icon: '👥', trend: 'neutral', trendValue: '', color: 'purple' },
   ];
 

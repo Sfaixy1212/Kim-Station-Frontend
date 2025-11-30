@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import SuperMasterTopbar from '../../components/supermaster/Topbar';
 import { getProtectedData, postProtectedData } from '../../services/api';
-import { Calendar, MapPin, User, FileText, MessageSquare, Filter, Download, TrendingUp, Map as MapIcon, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, List, CalendarDays } from 'lucide-react';
+import { Calendar, MapPin, User, FileText, MessageSquare, Filter, Download, TrendingUp, Map as MapIcon, ChevronDown, ChevronUp, ChevronLeft, ChevronRight, List, CalendarDays, FileDown } from 'lucide-react';
 import { ExternalLink } from 'lucide-react';
 import { MapContainer, TileLayer, Marker, Popup, Polyline } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -93,6 +93,12 @@ export default function CRMVisite() {
   const [mostraMappa, setMostraMappa] = useState(false);
   const [loadingPercorso, setLoadingPercorso] = useState(false);
   const [distanzeVisite, setDistanzeVisite] = useState({});
+  
+  // Percorso settimanale
+  const [percorsoSettimanale, setPercorsoSettimanale] = useState(null);
+  const [settimanaSelezionata, setSettimanaSelezionata] = useState(null);
+  const [mostraMappaSettimanale, setMostraMappaSettimanale] = useState(false);
+  const [loadingPercorsoSettimanale, setLoadingPercorsoSettimanale] = useState(false);
   
   // Vista calendario settimanale
   const [vistaCalendario, setVistaCalendario] = useState(true);
@@ -205,6 +211,22 @@ export default function CRMVisite() {
     }
   };
 
+  const loadPercorsoSettimanale = async (idAgente, dataInizio) => {
+    if (!idAgente || !dataInizio) return;
+    
+    setLoadingPercorsoSettimanale(true);
+    try {
+      const percorso = await getProtectedData(`/supermaster/crm-visite/percorso-settimanale/${idAgente}?dataInizio=${dataInizio}`);
+      setPercorsoSettimanale(percorso);
+      setSettimanaSelezionata(dataInizio);
+    } catch (err) {
+      console.error('Errore caricamento percorso settimanale:', err);
+      setPercorsoSettimanale(null);
+    } finally {
+      setLoadingPercorsoSettimanale(false);
+    }
+  };
+
   // Calcola inizio e fine settimana
   const getWeekDays = (date) => {
     const d = new Date(date);
@@ -305,6 +327,56 @@ export default function CRMVisite() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const handleExportPDF = async () => {
+    if (!filtroAgente) {
+      alert('Seleziona un agente per generare il report PDF');
+      return;
+    }
+
+    const lunedi = weekDays[0].toISOString().split('T')[0];
+    
+    try {
+      // Ottieni il token per l'autenticazione
+      const token = localStorage.getItem('token') || sessionStorage.getItem('token');
+      
+      const response = await fetch(
+        `${import.meta.env.VITE_API_BASE || ''}/supermaster/crm-visite/report-settimanale-pdf/${filtroAgente}?dataInizio=${lunedi}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${token}`
+          }
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Errore nella generazione del PDF');
+      }
+
+      // Scarica il PDF
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      
+      // Estrai nome file dall'header o usa default
+      const contentDisposition = response.headers.get('Content-Disposition');
+      let filename = `report_visite_${lunedi}.pdf`;
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="(.+)"/);
+        if (match) filename = match[1];
+      }
+      
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Errore download PDF:', err);
+      alert('Errore nella generazione del report PDF');
+    }
   };
 
   return (
@@ -527,6 +599,29 @@ export default function CRMVisite() {
               >
                 Oggi
               </button>
+              {filtroAgente && (
+                <>
+                  <button
+                    onClick={() => {
+                      const lunedi = weekDays[0].toISOString().split('T')[0];
+                      loadPercorsoSettimanale(filtroAgente, lunedi);
+                    }}
+                    disabled={loadingPercorsoSettimanale}
+                    className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors disabled:opacity-50"
+                  >
+                    <MapIcon className="w-4 h-4" />
+                    <span>{loadingPercorsoSettimanale ? 'Caricamento...' : 'Calcola Percorso'}</span>
+                  </button>
+                  <button
+                    onClick={handleExportPDF}
+                    className="flex items-center space-x-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors"
+                    title="Scarica Report PDF Settimanale"
+                  >
+                    <FileDown className="w-4 h-4" />
+                    <span>Stampa PDF</span>
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>
@@ -608,6 +703,156 @@ export default function CRMVisite() {
                 );
               })}
             </div>
+
+            {/* Percorso Settimanale */}
+            {percorsoSettimanale && (
+              <div className="mt-6 p-6 bg-purple-50 border border-purple-200 rounded-lg">
+                <div className="flex items-center justify-between mb-4">
+                  <h4 className="text-lg font-bold text-purple-900">🗺️ Percorso Settimanale</h4>
+                  <div className="flex items-center gap-4">
+                    <button
+                      onClick={() => setMostraMappaSettimanale(!mostraMappaSettimanale)}
+                      className="flex items-center gap-2 px-4 py-2 text-sm bg-white border border-purple-300 rounded-lg hover:bg-purple-50 transition-colors"
+                    >
+                      <MapIcon className="w-4 h-4" />
+                      {mostraMappaSettimanale ? 'Nascondi' : 'Mostra'} Mappa
+                      {mostraMappaSettimanale ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                    </button>
+                    <span className="text-xl font-bold text-purple-700">
+                      {percorsoSettimanale.kmTotaliSettimana} km totali
+                    </span>
+                  </div>
+                </div>
+
+                {/* Legenda colori giorni */}
+                <div className="flex flex-wrap gap-3 mb-4">
+                  {percorsoSettimanale.percorsiGiornalieri.map((giorno, idx) => (
+                    <div key={idx} className="flex items-center gap-2">
+                      <div 
+                        className="w-4 h-4 rounded-full" 
+                        style={{ backgroundColor: giorno.colore }}
+                      />
+                      <span className="text-sm font-medium text-gray-700">
+                        {giorno.nomeGiorno}: {giorno.kmTotali} km ({giorno.visite.length} visite)
+                      </span>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Mappa interattiva */}
+                {mostraMappaSettimanale && (
+                  <div className="rounded-lg overflow-hidden border border-purple-300" style={{ height: '600px' }}>
+                    <MapContainer
+                      bounds={percorsoSettimanale.percorsiGiornalieri
+                        .flatMap(g => g.percorso)
+                        .filter(t => t.latitudine && t.longitudine)
+                        .map(t => [t.latitudine, t.longitudine])}
+                      scrollWheelZoom={true}
+                      style={{ height: '100%', width: '100%' }}
+                    >
+                      <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      />
+                      
+                      {/* Percorsi per ogni giorno con colori diversi */}
+                      {percorsoSettimanale.percorsiGiornalieri.map((giorno, idx) => (
+                        <div key={idx}>
+                          {/* Polyline del percorso */}
+                          {giorno.routeGeometry && giorno.routeGeometry.length > 0 ? (
+                            <Polyline
+                              positions={giorno.routeGeometry.map(coord => [coord[1], coord[0]])}
+                              color={giorno.colore}
+                              weight={4}
+                              opacity={0.7}
+                            />
+                          ) : (
+                            <Polyline
+                              positions={giorno.percorso
+                                .filter(t => t.latitudine && t.longitudine)
+                                .map(t => [t.latitudine, t.longitudine])}
+                              color={giorno.colore}
+                              weight={3}
+                              opacity={0.6}
+                              dashArray="5, 10"
+                            />
+                          )}
+                          
+                          {/* Marker per ogni visita */}
+                          {giorno.percorso.map((tappa, tappaIdx) => {
+                            if (!tappa.latitudine || !tappa.longitudine || tappa.tipo !== 'VISITA') return null;
+                            
+                            return (
+                              <Marker
+                                key={`${idx}-${tappaIdx}`}
+                                position={[tappa.latitudine, tappa.longitudine]}
+                              >
+                                <Popup>
+                                  <div className="text-sm">
+                                    <div 
+                                      className="font-bold mb-1 px-2 py-1 rounded text-white"
+                                      style={{ backgroundColor: giorno.colore }}
+                                    >
+                                      {giorno.nomeGiorno} - {tappa.ora}
+                                    </div>
+                                    {tappa.ragioneSociale && (
+                                      <div className="text-gray-900 font-medium mb-1">{tappa.ragioneSociale}</div>
+                                    )}
+                                    {tappa.citta && (
+                                      <div className="text-gray-600 text-xs mb-1">📍 {tappa.citta}</div>
+                                    )}
+                                    {tappa.kmDaPrecedente > 0 && (
+                                      <div className="text-gray-500 text-xs">
+                                        🚗 {tappa.kmDaPrecedente} km dal precedente
+                                      </div>
+                                    )}
+                                  </div>
+                                </Popup>
+                              </Marker>
+                            );
+                          })}
+                        </div>
+                      ))}
+                    </MapContainer>
+                  </div>
+                )}
+
+                {/* Dettaglio per giorno */}
+                <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {percorsoSettimanale.percorsiGiornalieri.map((giorno, idx) => (
+                    <div 
+                      key={idx} 
+                      className="p-4 bg-white rounded-lg border-2"
+                      style={{ borderColor: giorno.colore }}
+                    >
+                      <div className="flex items-center justify-between mb-2">
+                        <h5 className="font-bold text-gray-900">{giorno.nomeGiorno}</h5>
+                        <span className="text-sm font-bold" style={{ color: giorno.colore }}>
+                          {giorno.kmTotali} km
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-600">
+                        {giorno.visite.length} {giorno.visite.length === 1 ? 'visita' : 'visite'}
+                      </div>
+                      {giorno.visite.length > 0 && (
+                        <div className="mt-2 space-y-1">
+                          {giorno.visite.slice(0, 3).map((visita, vIdx) => (
+                            <div key={vIdx} className="text-xs text-gray-700 truncate">
+                              • {visita.OraInizio} - {visita.RagioneSocialeDealer}
+                            </div>
+                          ))}
+                          {giorno.visite.length > 3 && (
+                            <div className="text-xs text-gray-500 italic">
+                              +{giorno.visite.length - 3} altre...
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           /* Lista Visite - Raggruppate per giorno se agente selezionato */

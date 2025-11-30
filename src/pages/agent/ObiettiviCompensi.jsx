@@ -159,6 +159,8 @@ export default function ObiettiviCompensi() {
   const [kpiData, setKpiData] = useState(null);
   const [kpiLoading, setKpiLoading] = useState(false);
   const [kpiError, setKpiError] = useState(null);
+  const [compensiData, setCompensiData] = useState(null);
+  const [compensiLoading, setCompensiLoading] = useState(false);
 
   const { objectiveCards, objectivesLastUpdate } = useMemo(() => {
     const detailed = data?.targetsDetailed || {};
@@ -345,6 +347,25 @@ export default function ObiettiviCompensi() {
     return () => { active = false; };
   }, [year, month]);
 
+  // Fetch compensi breakdown
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        setCompensiLoading(true);
+        const monthStart = `${year}-${String(month).padStart(2, '0')}-01`;
+        const res = await getProtectedData(`/agente/compensi?monthStart=${monthStart}`);
+        if (active) setCompensiData(res || null);
+      } catch (e) {
+        console.error('[Obiettivi][Compensi]', e);
+        if (active) setCompensiData(null);
+      } finally {
+        if (active) setCompensiLoading(false);
+      }
+    })();
+    return () => { active = false; };
+  }, [year, month]);
+
   return (
     <DashboardLayout title="Obiettivi & Compensi">
       <div className="rounded-2xl bg-white p-4 sm:p-6 shadow-sm mt-4">
@@ -454,12 +475,193 @@ export default function ObiettiviCompensi() {
               ) : null}
             </section>
 
-            <section className="rounded-xl border border-dashed border-gray-300 bg-gray-50/60 p-6 text-center text-sm text-gray-500">
-              <div className="text-lg font-semibold text-gray-800 mb-2">Compensi</div>
-              <p className="text-base font-medium text-gray-600">Funzionalità in arrivo</p>
-              <p className="mt-2 text-xs text-gray-500 max-w-xl mx-auto">
-                Stiamo completando l’integrazione dei dati reali di compenso. Presto vedrai qui KPI aggiornati, progressi e simulazioni in tempo reale.
-              </p>
+            {/* Sezione Compensi con Breakdown Dettagliato */}
+            <section className="rounded-xl border border-gray-200 bg-white p-6">
+              <div className="text-lg font-semibold text-gray-800 mb-4">Compensi - Dettaglio</div>
+              
+              {compensiLoading ? (
+                <div className="text-center text-gray-500 py-8">Caricamento compensi...</div>
+              ) : compensiData?.breakdown ? (
+                <div className="space-y-6">
+                  {/* Totale */}
+                  <div className="bg-gradient-to-r from-emerald-50 to-teal-50 rounded-xl p-4 border border-emerald-200">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-medium text-emerald-700">TOTALE COMPENSO</span>
+                      <span className="text-2xl font-bold text-emerald-700">{formatEuro(compensiData.data?.Euro_Totale_Compenso || 0)}</span>
+                    </div>
+                  </div>
+
+                  {/* Grid breakdown */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    
+                    {/* Prodotti */}
+                    <div className="rounded-lg border border-gray-200 p-4">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-blue-500"></span>
+                        Prodotti
+                      </h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Fissi ({compensiData.breakdown.prodotti?.fissi?.qty || 0} × €10)</span>
+                          <span className="font-medium">{formatEuro(compensiData.breakdown.prodotti?.fissi?.euro || 0)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Energy FW ({compensiData.breakdown.prodotti?.energyFW?.qty || 0} × €10)</span>
+                          <span className="font-medium">{formatEuro(compensiData.breakdown.prodotti?.energyFW?.euro || 0)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">SKY ({compensiData.breakdown.prodotti?.sky?.qty || 0} × €10)</span>
+                          <span className="font-medium">{formatEuro(compensiData.breakdown.prodotti?.sky?.euro || 0)}</span>
+                        </div>
+                        <div className="flex justify-between pt-2 border-t border-gray-100">
+                          <span className="font-medium text-gray-700">Subtotale</span>
+                          <span className="font-semibold text-blue-600">{formatEuro(compensiData.breakdown.prodotti?.totale || 0)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* SIM RA */}
+                    <div className="rounded-lg border border-gray-200 p-4">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-purple-500"></span>
+                        SIM Ricarica Automatica
+                      </h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Totale RA</span>
+                          <span className="font-medium">{compensiData.breakdown.simRA?.totale || 0}</span>
+                        </div>
+                        <div className="flex justify-between text-xs text-gray-500">
+                          <span>- In convergenza</span>
+                          <span>{compensiData.breakdown.simRA?.convergenza || 0}</span>
+                        </div>
+                        <div className="flex justify-between text-xs text-gray-500">
+                          <span>- Only mobile</span>
+                          <span>{compensiData.breakdown.simRA?.onlyMobile || 0}</span>
+                        </div>
+                        <div className="flex justify-between pt-2 border-t border-gray-100">
+                          <span className="font-medium text-gray-700">Subtotale</span>
+                          <span className="font-semibold text-purple-600">{formatEuro(compensiData.breakdown.simRA?.euro || 0)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* SIM Vendute */}
+                    <div className="rounded-lg border border-gray-200 p-4">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+                        SIM Vendute (€1/SIM)
+                      </h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Fastweb</span>
+                          <span className="font-medium">{compensiData.breakdown.simVendute?.fastweb || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Iliad</span>
+                          <span className="font-medium">{compensiData.breakdown.simVendute?.iliad || 0}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">1Mobile</span>
+                          <span className="font-medium">{compensiData.breakdown.simVendute?.oneMobile || 0}</span>
+                        </div>
+                        <div className="flex justify-between pt-2 border-t border-gray-100">
+                          <span className="font-medium text-gray-700">Totale ({compensiData.breakdown.simVendute?.totale || 0} SIM)</span>
+                          <span className="font-semibold text-amber-600">{formatEuro(compensiData.breakdown.simVendute?.euro || 0)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* ENI */}
+                    <div className="rounded-lg border border-gray-200 p-4">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-orange-500"></span>
+                        ENI Plenitude
+                      </h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Commodity ({compensiData.breakdown.eni?.totali || 0} × €5)</span>
+                          <span className="font-medium">{formatEuro(compensiData.breakdown.eni?.euroBase || 0)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Addebito RID ({compensiData.breakdown.eni?.rid || 0} × €2)</span>
+                          <span className="font-medium">{formatEuro(compensiData.breakdown.eni?.euroAddebito || 0)}</span>
+                        </div>
+                        {compensiData.breakdown.eni?.euroBoost > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Boost Energy</span>
+                            <span className="font-medium">{formatEuro(compensiData.breakdown.eni?.euroBoost || 0)}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between pt-2 border-t border-gray-100">
+                          <span className="font-medium text-gray-700">Subtotale</span>
+                          <span className="font-semibold text-orange-600">{formatEuro(compensiData.breakdown.eni?.euro || 0)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Bonus */}
+                    <div className="rounded-lg border border-gray-200 p-4">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-green-500"></span>
+                        Bonus
+                      </h4>
+                      <div className="space-y-2 text-sm">
+                        {compensiData.breakdown.bonus?.soglie > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Soglie (Energy/Fissi)</span>
+                            <span className="font-medium">{formatEuro(compensiData.breakdown.bonus?.soglie || 0)}</span>
+                          </div>
+                        )}
+                        {compensiData.breakdown.bonus?.extraFissi > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Extra Fissi (composizione)</span>
+                            <span className="font-medium">{formatEuro(compensiData.breakdown.bonus?.extraFissi || 0)}</span>
+                          </div>
+                        )}
+                        {compensiData.breakdown.bonus?.mobileAuto > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">Mobile Auto</span>
+                            <span className="font-medium">{formatEuro(compensiData.breakdown.bonus?.mobileAuto || 0)}</span>
+                          </div>
+                        )}
+                        {compensiData.breakdown.bonus?.simMNP > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-gray-600">SIM MNP Target</span>
+                            <span className="font-medium">{formatEuro(compensiData.breakdown.bonus?.simMNP || 0)}</span>
+                          </div>
+                        )}
+                        {compensiData.breakdown.bonus?.totale === 0 && (
+                          <div className="text-gray-400 text-xs">Nessun bonus raggiunto</div>
+                        )}
+                        <div className="flex justify-between pt-2 border-t border-gray-100">
+                          <span className="font-medium text-gray-700">Subtotale</span>
+                          <span className="font-semibold text-green-600">{formatEuro(compensiData.breakdown.bonus?.totale || 0)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Contributo */}
+                    <div className="rounded-lg border border-gray-200 p-4">
+                      <h4 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-gray-500"></span>
+                        Contributo Fisso
+                      </h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span className="text-gray-600">Contributo mensile</span>
+                          <span className="font-semibold text-gray-700">{formatEuro(compensiData.breakdown.contributo || 0)}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center text-gray-500 py-8">
+                  Nessun dato compensi disponibile per il periodo selezionato.
+                </div>
+              )}
             </section>
           </>
         )}

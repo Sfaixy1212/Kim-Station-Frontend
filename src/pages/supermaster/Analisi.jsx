@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import DashboardLayout from '../../components/layout/DashboardLayout';
-import { getProtectedData, postProtectedData } from '../../services/api';
+import { getProtectedData, postProtectedData, getToken } from '../../services/api';
 import { useAuth } from '../../contexts/AuthContext';
 import toast from 'react-hot-toast';
 
@@ -463,6 +463,113 @@ function AgentPanel({ agente, year, month }){
   );
 }
 
+// Componente per export PDF statistiche
+function ExportPdfSection() {
+  const now = new Date();
+  const firstDayOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const [dateFrom, setDateFrom] = useState(firstDayOfMonth.toISOString().split('T')[0]);
+  const [dateTo, setDateTo] = useState(now.toISOString().split('T')[0]);
+  const [exporting, setExporting] = useState(false);
+
+  const handleExport = async () => {
+    if (!dateFrom || !dateTo) {
+      toast.error('Seleziona entrambe le date');
+      return;
+    }
+
+    if (new Date(dateFrom) > new Date(dateTo)) {
+      toast.error('La data iniziale deve essere precedente alla data finale');
+      return;
+    }
+
+    try {
+      setExporting(true);
+      const params = new URLSearchParams({ dateFrom, dateTo });
+      const url = `/supermaster/export-kpi-pdf?${params.toString()}`;
+      
+      // Ottieni il token
+      const token = getToken();
+      
+      // Fetch con autenticazione
+      const response = await fetch(`${import.meta.env.VITE_API_BASE || ''}${url}`, {
+        headers: {
+          'Authorization': `Bearer ${token}`
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Errore durante la generazione del PDF');
+      }
+
+      // Download del PDF
+      const blob = await response.blob();
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = downloadUrl;
+      a.download = `statistiche_agenti_${dateFrom}_${dateTo}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(downloadUrl);
+
+      toast.success('PDF generato con successo!');
+    } catch (error) {
+      console.error('Errore export PDF:', error);
+      toast.error(error.message || 'Errore durante l\'esportazione');
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl shadow-sm ring-1 ring-gray-100 p-4 mb-4">
+      <h3 className="text-sm font-semibold text-gray-900 mb-3">📊 Stampa Statistiche</h3>
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="flex flex-col">
+          <label className="text-xs text-gray-500 mb-1">Dal</label>
+          <input
+            type="date"
+            value={dateFrom}
+            onChange={(e) => setDateFrom(e.target.value)}
+            className="border-gray-300 rounded-md text-sm px-3 py-1.5"
+          />
+        </div>
+        <div className="flex flex-col">
+          <label className="text-xs text-gray-500 mb-1">Al</label>
+          <input
+            type="date"
+            value={dateTo}
+            onChange={(e) => setDateTo(e.target.value)}
+            className="border-gray-300 rounded-md text-sm px-3 py-1.5"
+          />
+        </div>
+        <button
+          onClick={handleExport}
+          disabled={exporting}
+          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {exporting ? (
+            <>
+              <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+              </svg>
+              <span>Generazione...</span>
+            </>
+          ) : (
+            <>
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm8-12V5a2 2 0 00-2-2H9a2 2 0 00-2 2v4h10z" />
+              </svg>
+              <span>STAMPA</span>
+            </>
+          )}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function AnalisiSuperMasterPage({ embed = false }){
   const { user } = useAuth();
   const now = new Date();
@@ -594,6 +701,9 @@ export default function AnalisiSuperMasterPage({ embed = false }){
       </div>
 
       {error && <div className="mb-3 text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">{error}</div>}
+
+      {/* Export PDF Statistiche */}
+      <ExportPdfSection />
 
       <div className="space-y-4">
         <AgentsSummaryGrid year={filters.year} month={filters.month} />
