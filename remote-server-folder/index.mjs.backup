@@ -1,0 +1,3120 @@
+console.log('DEBUG: INIZIO FILE index.mjs');
+import dotenv from 'dotenv';
+import { v4 as uuidv4 } from 'uuid';
+import multer from 'multer';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import createAgenteRouter from './agente.mjs';
+import createDealerRouter from './dealer.mjs';
+import { authenticateToken } from './auth-middleware.mjs';
+import express from 'express';
+import { DateTime } from 'luxon';
+import sql from 'mssql';
+import jwt from 'jsonwebtoken';
+import Stripe from 'stripe';
+import axios from 'axios';
+import crypto from 'crypto';
+import nodemailer from 'nodemailer';
+import fs from 'fs';
+import https from 'https';
+// Importa il modulo aspnet-identity-pw una sola volta
+import aspnetIdentityPw from 'aspnet-identity-pw';
+
+// Verifica che il modulo sia stato caricato correttamente
+if (typeof aspnetIdentityPw !== 'object' || typeof aspnetIdentityPw.validatePassword !== 'function') {
+  console.error('Errore nel caricamento di aspnet-identity-pw');
+  process.exit(1);
+}
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Carica le variabili d'ambiente
+const result = dotenv.config({ path: path.join(__dirname, '.env') });
+console.log('[DEBUG][STRIPE] Chiave usata:', process.env.STRIPE_SECRET_KEY);
+console.log('[DEBUG] dotenv result:', result);
+console.log('[DEBUG] Stripe key (raw):', process.env.STRIPE_SECRET_KEY);
+console.log('[DEBUG] Stripe key (masked):', process.env.STRIPE_SECRET_KEY ? process.env.STRIPE_SECRET_KEY.slice(0, 8) + '...' + process.env.STRIPE_SECRET_KEY.slice(-4) : 'undefined');
+console.log('[DEBUG] Stripe key (hex):', Buffer.from(process.env.STRIPE_SECRET_KEY || '', 'utf8').toString('hex'));
+
+// Configura axios per non verificare i certificati SSL
+axios.defaults.httpsAgent = new https.Agent({  
+  rejectUnauthorized: false
+});
+
+console.log('aspnetIdentityPw export:', aspnetIdentityPw);
+console.log('aspnetIdentityPw.validatePassword:', typeof aspnetIdentityPw.validatePassword);
+
+// Verifica chiave Stripe
+if (!process.env.STRIPE_SECRET_KEY) {
+  console.error('[FATAL] STRIPE_SECRET_KEY non definita! Arresto server.');
+  process.exit(1);
+}
+
+const stripeKey = process.env.STRIPE_SECRET_KEY;
+console.log('[DEBUG] Stripe Secret Key (masked):', stripeKey ? stripeKey.slice(0, 8) + '...' + stripeKey.slice(-4) : 'undefined');
+console.log('[DEBUG] Stripe Secret Key (hex):', Buffer.from(stripeKey || '', 'utf8').toString('hex'));
+const stripe = new Stripe(stripeKey);
+let sqlErrorListenerAdded = false;
+
+// Verifica delle variabili d'ambiente richieste
+const requiredEnvVars = ['DB_USER', 'DB_PASSWORD', 'DB_SERVER', 'DB_NAME'];
+const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+
+if (missingVars.length > 0) {
+  console.error(`Errore: Le seguenti variabili d'ambiente sono richieste ma mancanti: ${missingVars.join(', ')}`);
+  process.exit(1);
+}
+
+// Configurazione del database
+const dbConfig = {
+  user: process.env.DB_USER,
+  password: process.env.DB_PASSWORD,
+  server: process.env.DB_SERVER,
+  port: parseInt(process.env.DB_PORT || '1433'),
+  database: process.env.DB_NAME,
+  options: {
+    encrypt: false,
+    trustServerCertificate: true,
+    enableArithAbort: true,
+    connectTimeout: 15000,
+    requestTimeout: 15000,
+    validateBulkLoadParameters: false,
+    useUTC: false,
+    abortTransactionOnError: false,
+    enableAnsiNullDefault: true,
+    appName: 'kim-backend',
+    cryptoCredentialsDetails: {
+      minVersion: 'TLSv1.2'
+    }
+  }
+};
+
+// Funzione per la connessione al database
+async function connectToDatabase() {
+  try {
+    if (!sql.connected) {
+      console.log('Tentativo di connessione al database...');
+      
+      console.log('Connessione al database stabilita con successo');
+      
+      // Aggiungi il listener di errori solo una volta
+      if (!sqlErrorListenerAdded) {
+        sql.on('error', err => {
+          console.error('Errore persistente di connessione al database (sql.on(error)):', err);
+        });
+        sqlErrorListenerAdded = true;
+      }
+    }
+    return true;
+  } catch (err) {
+    console.error('Errore durante la connessione al database:', err);
+    return false;
+  }
+}
+
+// Crea l'applicazione Express
+const app = express();
+
+// Importa e monta il router dettaglio ordine MasterProdotti
+import masterprodottiOrdineDettaglioRouter from './masterprodotti-ordine-dettaglio.mjs';
+app.use(masterprodottiOrdineDettaglioRouter);
+
+// Monta i router agenti e dealer
+app.use('/api/agente', createAgenteRouter({ authenticateToken, dbConfig }));
+app.use('/api/dealer', createDealerRouter({ authenticateToken, dbConfig }));
+
+// DEBUG: Registrazione route /api/master/attivazione/:id appena dopo app
+console.log('DEBUG: [EARLY] sto per registrare la route /api/master/attivazione/:id');
+
+// === UPLOAD PDA FILE PER MASTER ===
+
+const uploadPda = multer({
+  storage: multer.diskStorage({
+    destination: async function (req, file, cb) {
+      try {
+        const dir = path.join(__dirname, 'uploads', 'pda');
+        await fs.promises.mkdir(dir, { recursive: true });
+        cb(null, dir);
+      } catch (err) {
+        cb(err);
+      }
+    },
+    filename: function (req, file, cb) {
+      const uuid = crypto.randomUUID();
+      const ext = path.extname(file.originalname).toLowerCase();
+      cb(null, uuid + 'pdaord' + req.params.id + ext);
+    }
+  }),
+  fileFilter: function (req, file, cb) {
+    if (file.mimetype !== 'application/pdf') {
+      return cb(new Error('Solo PDF consentiti'));
+    }
+    cb(null, true);
+  },
+  limits: { fileSize: 10 * 1024 * 1024 } // max 10MB
+});
+
+app.post('/api/master/attivazione/:id/upload-pda', authenticateToken, onlyMaster, uploadPda.single('file'), async (req, res) => {
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(400).json({ error: 'ID non valido' });
+    if (!req.file) return res.status(400).json({ error: 'File mancante' });
+    const NomeFile = req.file.filename;
+    const FileUID = NomeFile;
+    const TipoFile = 'PDA';
+    const Payload = '-';
+    
+    await new sql.Request()
+      .input('IDOrdine', sql.Int, id)
+      .input('TipoFile', sql.NVarChar, TipoFile)
+      .input('FileUID', sql.NVarChar, FileUID)
+      .input('NomeFile', sql.NVarChar, NomeFile)
+      .input('Payload', sql.NVarChar, Payload)
+      .query(`INSERT INTO dbo.tbFileOrdine (IDOrdine, TipoFile, FileUID, NomeFile, Payload) VALUES (@IDOrdine, @TipoFile, @FileUID, @NomeFile, @Payload)`);
+    res.json({ ok: true, NomeFile });
+  } catch (err) {
+    console.error('[UPLOAD PDA ERROR]', err);
+    res.status(500).json({ error: 'Errore upload' });
+  }
+});
+
+app.get('/api/master/attivazione/:id', authenticateToken, onlyMaster, async (req, res) => {
+  console.log('[DEBUG] Chiamata a /api/master/attivazione/:id con id:', req.params.id);
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(400).json({ error: 'ID non valido' });
+    
+    // Dati principali ordine + join
+    const result = await new sql.Request()
+      .input('id', sql.Int, id)
+      .query(`
+        SELECT o.*, d.RagioneSociale AS Dealer, s.StatoEsteso, ofer.Titolo AS Offerta,
+          CONVERT(varchar, o.DataOra, 104) AS DataOrdine,
+          ofer.Crediti, ofer.Segmento, ofer.Tipo
+        FROM dbo.tbOrdini o
+        LEFT JOIN dbo.tbDealers d ON o.idDealer = d.IDDealer
+        LEFT JOIN dbo.tbStatiOrdini s ON o.Stato = s.IDStato
+        LEFT JOIN dbo.tbOfferte ofer ON o.idOfferta = ofer.IDOfferta
+        WHERE o.IDOrdine = @id
+      `);
+    if (!result.recordset || result.recordset.length === 0) return res.status(404).json({ error: 'Ordine non trovato' });
+    const ordine = result.recordset[0];
+    // Documenti
+    let documenti = [];
+    try {
+      const docs = await new sql.Request()
+        .input('id', sql.Int, id)
+        .query(`SELECT NomeOriginale AS nome, FileUrl AS url FROM dbo.tbDocumenti WHERE IDOrdine = @id`);
+      documenti = docs.recordset || [];
+    } catch(e) { documenti = []; }
+    ordine.Documenti = documenti;
+    // Storico cambi stato
+    let storico = [];
+    try {
+      const storicoRes = await new sql.Request()
+        .input('id', sql.Int, id)
+        .query(`
+          SELECT DataOra, Utente, StatoPrecedente, StatoNuovo, Nota
+          FROM dbo.tbStoricoOrdini WHERE IDOrdine = @id
+          ORDER BY DataOra DESC
+        `);
+      storico = storicoRes.recordset || [];
+    } catch(e) { storico = []; }
+    ordine.Storico = storico;
+    // Payload da tbDatiOrdine
+    let payload = {};
+    try {
+      const dati = await new sql.Request()
+        .input('id', sql.Int, id)
+        .query(`SELECT TOP 1 Payload FROM dbo.tbDatiOrdine WHERE IDOrdine = @id`);
+      payload = dati.recordset[0]?.Payload ? JSON.parse(dati.recordset[0].Payload) : {};
+    } catch(e) { payload = {}; }
+    ordine.Payload = payload;
+    // Payload intestatario
+    let payloadInt = {};
+    try {
+      const datiInt = await new sql.Request()
+        .input('id', sql.Int, id)
+        .query(`SELECT TOP 1 Payload FROM dbo.tbDatiIntestario WHERE IDOrdine = @id`);
+      payloadInt = datiInt.recordset[0]?.Payload ? JSON.parse(datiInt.recordset[0].Payload) : {};
+    } catch(e) { payloadInt = {}; }
+    ordine.PayloadIntestario = payloadInt;
+    // File ordine
+    let fileOrdine = [];
+    try {
+      const files = await new sql.Request()
+        .input('id', sql.Int, id)
+        .query(`SELECT * FROM dbo.tbFileOrdine WHERE IDOrdine = @id`);
+      fileOrdine = files.recordset || [];
+    } catch(e) { fileOrdine = []; }
+    ordine.FileOrdine = fileOrdine;
+    res.json(ordine);
+  } catch (err) {
+    console.error('[MASTER][DETTAGLIO ORDINE] Errore:', err);
+    res.status(500).json({ error: 'Errore server' });
+  }
+});
+console.log('DEBUG: [EARLY] route /api/master/attivazione/:id registrata');
+
+// DEBUG: log all routes on startup
+app.on('mount', () => {
+  if (app._router && app._router.stack) {
+    console.log('=== ROUTES REGISTRATE ===');
+    app._router.stack.forEach(middleware => {
+      if (middleware.route) {
+        // routes registered directly on the app
+        const methods = Object.keys(middleware.route.methods).join(', ').toUpperCase();
+        console.log(`${methods} ${middleware.route.path}`);
+      } else if (middleware.name === 'router') {
+        // router middleware
+        middleware.handle.stack.forEach(handler => {
+          const route = handler.route;
+          if (route) {
+            const methods = Object.keys(route.methods).join(', ').toUpperCase();
+            console.log(`${methods} ${route.path}`);
+          }
+        });
+      }
+    });
+    console.log('========================');
+  }
+});
+
+// In alternativa, stampa le routes subito dopo la definizione di tutte le route (compatibile con Express classico)
+setTimeout(() => {
+  if (app._router && app._router.stack) {
+    console.log('=== ROUTES REGISTRATE (startup) ===');
+    app._router.stack.forEach(middleware => {
+      if (middleware.route) {
+        const methods = Object.keys(middleware.route.methods).join(', ').toUpperCase();
+        console.log(`${methods} ${middleware.route.path}`);
+      }
+    });
+    console.log('========================');
+  }
+}, 2000);
+
+// Endpoint per aggiornare lo stato di un contratto
+app.post('/api/contratti/:id/stato', authenticateToken, onlyMaster, express.json(), async (req, res) => {
+  const { id } = req.params;
+  const { stato } = req.body;
+  
+  if (!stato) {
+    return res.status(400).json({ error: 'Campo "stato" mancante' });
+  }
+  
+  // Mappa gli stati testuali ai valori numerici
+  const statoMap = {
+    'ACCETTATO': 1,
+    'RIFIUTATO': 2,
+    'RIMANDA_PER_MODIFICA': 3
+  };
+  
+  let statoNumerico = statoMap[stato];
+  if (statoNumerico === undefined) {
+    // Se non è una stringa mappata, prova a usare direttamente il valore numerico
+    if (!isNaN(Number(stato))) {
+      statoNumerico = Number(stato);
+    } else {
+      return res.status(400).json({ error: 'Stato non valido' });
+    }
+  }
+  
+  try {
+    
+    
+    // Inizia una transazione per eseguire più operazioni atomiche
+    const transaction = new sql.Transaction();
+    await transaction.begin();
+    
+    try {
+      // Prima ottieni i dati del contratto per il logging
+      const selectRequest = new sql.Request(transaction);
+      const contratto = await selectRequest.query`
+        SELECT [ID], [idDealer], [NomeFile], [Stato] as VecchioStato
+        FROM [dbo].[tbFilesStorage]
+        WHERE [ID] = ${id};
+      `;
+      
+      if (contratto.recordset.length === 0) {
+        throw new Error('Nessun contratto trovato con questo ID');
+      }
+      
+      console.log('Dati contratto prima dell\'aggiornamento:', contratto.recordset[0]);
+      
+      // Log dettagliato per debug
+      console.log('Aggiorno contratto', { id, statoNumerico, note: req.body.note });
+      // Esegui l'aggiornamento
+      const updateRequest = new sql.Request(transaction);
+      await updateRequest.query`
+        UPDATE [dbo].[tbFilesStorage]
+        SET [Stato] = ${statoNumerico},
+            [Note] = ${req.body.note || null}
+        WHERE [ID] = ${id};
+      `;
+      
+      // Commit della transazione
+      await transaction.commit();
+      
+      console.log(`Stato contratto ${id} aggiornato da ${contratto.recordset[0].VecchioStato} a ${statoNumerico}`);
+      res.json({ 
+        success: true, 
+        message: 'Stato aggiornato con successo',
+        id: id,
+        vecchioStato: contratto.recordset[0].VecchioStato,
+        nuovoStato: statoNumerico
+      });
+      
+    } catch (err) {
+      // Rollback in caso di errore
+      await transaction.rollback();
+      console.error('Errore durante la transazione:', err);
+      throw err; // Rilancia l'errore per la gestione esterna
+    }
+    
+  } catch (err) {
+    console.error('Errore durante l\'aggiornamento dello stato del contratto:', {
+      message: err.message,
+      code: err.code,
+      number: err.number,
+      lineNumber: err.lineNumber,
+      stack: err.stack
+    });
+    
+    res.status(500).json({ 
+      error: 'Errore durante l\'aggiornamento dello stato', 
+      details: err.message,
+      code: err.code || err.number,
+      originalError: process.env.NODE_ENV === 'development' ? err : undefined
+    });
+  }
+});
+
+// Middleware: solo MASTER
+function onlyMaster(req, res, next) {
+  try {
+    if (!req.user) {
+      console.log('[ONLY_MASTER] Errore: Utente non autenticato');
+      return res.status(403).json({ error: 'Accesso non autorizzato' });
+    }
+    
+    const ruoli = req.user.ruoli
+      ? req.user.ruoli.map(r => r.toUpperCase())
+      : req.user.ruolo
+        ? [req.user.ruolo.toUpperCase()]
+        : [];
+    console.log('[ONLY_MASTER] Ruoli utente:', ruoli);
+    
+    if (ruoli.includes('MASTER') || req.user.email === 'attivazioni@kimweb.it') {
+      console.log('[ONLY_MASTER] Accesso consentito');
+      return next();
+    }
+    
+    console.log('[ONLY_MASTER] Accesso negato: ruolo non autorizzato');
+    return res.status(403).json({ error: 'Accesso riservato al ruolo MASTER' });
+  } catch (e) {
+    console.error('[ONLY_MASTER] Errore:', e);
+    return res.status(403).json({ error: 'Errore di autorizzazione' });
+  }
+}
+
+// Esporta i middleware per l'uso in altri file
+
+console.log('DEBUG: FINE FILE index.js');
+// Middleware: solo MASTERPRODOTTI
+function onlyMasterProdotti(req, res, next) {
+  try {
+    if (!req.user) {
+      console.log('[ONLY_MASTERPRODOTTI] Errore: Utente non autenticato');
+      return res.status(403).json({ error: 'Accesso non autorizzato' });
+    }
+    
+    const ruoli = req.user.ruoli ? req.user.ruoli.map(r => r.toUpperCase()) : [];
+    console.log('[ONLY_MASTERPRODOTTI] Ruoli utente:', ruoli);
+    
+    if (ruoli.includes('MASTERPRODOTTI') || req.user.email === 'amministrazione@kimweb.it') {
+      console.log('[ONLY_MASTERPRODOTTI] Accesso consentito');
+      return next();
+    }
+    
+    console.log('[ONLY_MASTERPRODOTTI] Accesso negato: ruolo non autorizzato');
+    return res.status(403).json({ error: 'Accesso riservato al ruolo MASTERPRODOTTI' });
+  } catch (e) {
+    console.error('[ONLY_MASTERPRODOTTI] Errore:', e);
+    return res.status(403).json({ error: 'Errore di autorizzazione' });
+  }
+    console.log("[ONLY_MASTER] Utente:", JSON.stringify(req.user, null, 2)); 
+    console.log("[ONLY_MASTER] Headers:", JSON.stringify(req.headers, null, 2)); 
+    console.log("[ONLY_MASTER] URL:", req.originalUrl);
+}
+
+// Endpoint: ORDINI MasterProdotti
+app.get('/api/masterprodotti/ordini', authenticateToken, onlyMasterProdotti, async (req, res) => {
+  try {
+    const result = await sql.query(`
+      SELECT 
+        o.IDOrdineProdotto AS IDOrdineProdotto,
+        FORMAT(o.[DataOra], 'dd.MM.yy') AS [Data],
+        d.[RagioneSociale],
+        o.[TotaleOrdine],
+        o.[NoteOrdine] AS [NOTE],
+        s.[StatoEsteso]
+      FROM 
+        [dbo].[tbOrdiniProdotti] o
+      INNER JOIN 
+        [dbo].[tbDealers] d ON o.[idDealer] = d.[idDealer]
+      INNER JOIN 
+        [dbo].[tbStatiOrdiniProdotti] s ON o.[idStatoOrdineProdotto] = s.[IDStato]
+      ORDER BY 
+        o.[DataOra] DESC;
+    `);
+    return res.json(result.recordset || []);
+  } catch (err) {
+    console.error('[MASTERPRODOTTI][ORDINI] Errore:', err);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  }
+});
+// Endpoint: ATTIVAZIONI MasterProdotti
+app.get('/api/masterprodotti/attivazioni', authenticateToken, onlyMasterProdotti, async (req, res) => {
+  try {
+    
+    const result = await sql.query(`
+      SELECT TOP 50
+        o.IDOrdine,
+        FORMAT(o.DataOra, 'dd/MM/yyyy HH:mm') as DataOrdine,
+        o.Stato,
+        d.RagioneSociale as Dealer,
+        o.NomeOfferta as Offerta
+      FROM dbo.tbOrdini o
+      LEFT JOIN dbo.tbDealers d ON o.idDealer = d.IDDealer
+      ORDER BY o.DataOra DESC
+    `);
+    
+    // Mappa gli stati per rimuovere eventuali caratteri speciali
+    const attivazioni = result.recordset.map(item => ({
+      ...item,
+      // Assicurati che lo stato sia nel formato atteso dal frontend
+      Stato: item.Stato ? item.Stato.replace(/[^\w\s]/gi, '').replace(/\s+/g, ' ').trim() : ''
+    }));
+    
+    res.json(attivazioni);
+
+  } catch (err) {
+    console.error('[MASTERPRODOTTI][ATTIVAZIONI] Errore:', err);
+    res.status(500).json({ error: 'Errore nel recupero delle attivazioni' });
+  }
+});
+
+// --- Password Reset Token Store (in-memory, replace with DB in production) ---
+const passwordResetTokens = new Map(); // email -> { token, expires, used }
+
+// --- Nodemailer Setup ---
+const transporter = nodemailer.createTransport({
+  host: process.env.EMAIL_HOST,
+  port: parseInt(process.env.EMAIL_PORT || '587'),
+  secure: process.env.EMAIL_SECURE === 'true',
+  auth: {
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASSWORD,
+  },
+});
+
+// --- PASSWORD RESET ENDPOINTS ---
+
+// Alias per compatibilità frontend: /api/reset-password
+app.post('/api/reset-password', express.json(), async (req, res, next) => {
+  // Forward alla stessa logica di /api/password-reset-request
+  req.url = '/api/password-reset-request';
+  app._router.handle(req, res, next);
+});
+
+// 1. Request password reset (send email)
+app.post('/api/password-reset-request', express.json(), async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email richiesta' });
+  try {
+    
+    // Check if user exists
+    const userRes = await new sql.Request()
+      .input('email', sql.NVarChar, email)
+      .query('SELECT TOP 1 * FROM dbo.AspNetUsers WHERE Email = @email');
+    if (!userRes.recordset.length) {
+      // Don't reveal if email exists (security)
+      return res.json({ success: true });
+    }
+    // Generate a secure random token
+    const token = (Math.random().toString(36).slice(2) + Math.random().toString(36).slice(2)).slice(0, 32);
+    const expires = Date.now() + 1000 * 60 * 30; // 30 min expiry
+    passwordResetTokens.set(email, { token, expires, used: false });
+    // Send email
+    // Nuova logica: link verso la pagina moderna di reset password
+    const resetLink = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/reset-password.html?token=${token}&email=${encodeURIComponent(email)}`;
+    await transporter.sendMail({
+      from: 'kimstation.noreply@kimweb.agency',
+      to: 'comunicazioni@kimweb.it', // OVERRIDE for testing, always send here
+      // In production, use: to: email,
+      subject: 'Password Reset Request',
+      html: `<p>Per reimpostare la password, clicca qui: <a href="${resetLink}">${resetLink}</a><br>Il link scade in 30 minuti.</p>`
+    });
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[RESET] Errore richiesta reset:', err);
+    return res.status(500).json({ error: 'Errore server' });
+  }
+});
+
+// --- ENDPOINT DASHBOARD MASTER ---
+
+// Endpoint: ORDINI MasterProdotti
+app.get('/api/masterprodotti/ordini', authenticateToken, onlyMasterProdotti, async (req, res) => {
+  try {
+    
+    const result = await sql.query(`
+      SELECT 
+        o.IDOrdineProdotto AS IDOrdineProdotto,
+        FORMAT(o.[DataOra], 'dd.MM.yy') AS [Data],
+        d.[RagioneSociale],
+        o.[TotaleOrdine],
+        o.[NoteOrdine] AS [NOTE],
+        s.[StatoEsteso]
+      FROM 
+        [dbo].[tbOrdiniProdotti] o
+      INNER JOIN 
+        [dbo].[tbDealers] d ON o.[idDealer] = d.[idDealer]
+      INNER JOIN 
+        [dbo].[tbStatiOrdiniProdotti] s ON o.[idStatoOrdineProdotto] = s.[IDStato]
+      ORDER BY 
+        o.[DataOra] DESC;
+    `);
+    return res.json(result.recordset || []);
+  } catch (err) {
+    console.error('[MASTERPRODOTTI][ORDINI] Errore:', err);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  }
+});
+
+// Attivazioni per MASTER
+app.get('/api/master/attivazioni', authenticateToken, onlyMaster, async (req, res) => {
+  try {
+    
+    const result = await sql.query(`
+      SELECT 
+        FORMAT(o.DataOra, 'dd.MM.yyyy') AS DataOrdine,
+        o.IDOrdine,
+        ofer.Titolo AS Offerta,
+        d.RagioneSociale AS Dealer,
+        s.StatoEsteso AS Stato
+      FROM dbo.tbOrdini o
+      LEFT JOIN dbo.tbOfferte ofer ON o.idOfferta = ofer.IDOfferta
+      LEFT JOIN dbo.tbDealers d ON o.idDealer = d.IDDealer
+      LEFT JOIN dbo.tbStatiOrdini s ON o.Stato = s.IDStato
+      ORDER BY o.DataOra DESC;
+    `);
+    res.json(result.recordset || []);
+  } catch (err) {
+    console.error('[MASTER][ATTIVAZIONI] Errore:', err);
+    res.status(500).json({ error: 'Errore server' });
+  }
+});
+
+// Ordini per MASTERPRODOTTI
+app.get('/api/masterprodotti/ordini', authenticateToken, onlyMasterProdotti, async (req, res) => {
+  try {
+    
+    const result = await sql.query(`
+      SELECT 
+        FORMAT(o.DataOra, 'dd.MM.yyyy') AS DataOrdine,
+        o.IDOrdine,
+        ofer.Titolo AS Offerta,
+        d.RagioneSociale AS Dealer,
+        s.StatoEsteso AS Stato
+      FROM dbo.tbOrdini o
+      LEFT JOIN dbo.tbOfferte ofer ON o.idOfferta = ofer.IDOfferta
+      LEFT JOIN dbo.tbDealers d ON o.idDealer = d.IDDealer
+      LEFT JOIN dbo.tbStatiOrdini s ON o.Stato = s.IDStato
+      ORDER BY o.DataOra DESC;
+    `);
+    res.json(result.recordset || []);
+  } catch (err) {
+    console.error('[MASTERPRODOTTI][ATTIVAZIONI] Errore:', err);
+    res.status(500).json({ error: 'Errore server' });
+  }
+});
+
+// Contratti Master
+app.get('/api/master/contratti', authenticateToken, onlyMaster, async (req, res) => {
+  try {
+    const result = await new sql.Request().query(`
+      SELECT  
+        f.ID AS idContratto,
+        FORMAT(f.DataOra, 'dd.MM.yyyy') AS Data,
+        d.RagioneSociale AS Dealer,
+        f.CognomeCliente,
+        f.MeseContratto,
+        f.AnnoContratto,
+        s.StatoEsteso AS Stato,
+        f.FullPath,
+        'https://station.kimweb.agency' + f.FullPath AS DocumentoUrl
+      FROM 
+        dbo.tbFilesStorage f
+      LEFT JOIN 
+        dbo.tbDealers d ON f.idDealer = d.IDDealer
+      LEFT JOIN 
+        dbo.tbStatiOrdiniContratti s ON f.Stato = s.IDStato
+      ORDER BY 
+        f.DataOra DESC
+    `);
+    
+    console.log(`[MASTER/CONTRATTI] Trovati ${result.recordset.length} record`);
+    return res.json(result.recordset || []);
+    
+  } catch (err) {
+    console.error('[MASTER/CONTRATTI] Errore nel recupero dei contratti:', err);
+    
+    if (!res.headersSent) {
+      return res.status(500).json({ 
+        error: 'Errore nel recupero dei contratti',
+        details: err.message,
+        code: err.code
+      });
+    }
+  }
+}); // <--- Aggiunta graffa di chiusura
+
+// === Dettaglio ordine/attivazione per MASTER ===
+console.log('DEBUG: sto per registrare la route /api/master/attivazione/:id');
+console.log('DEBUG: sto per registrare la route /api/master/attivazione/:id');
+app.get('/api/master/attivazione/:id', authenticateToken, onlyMaster, async (req, res) => {
+  console.log('[DEBUG] Chiamata a /api/master/attivazione/:id con id:', req.params.id);
+  try {
+    const id = parseInt(req.params.id, 10);
+    if (isNaN(id)) return res.status(400).json({ error: 'ID non valido' });
+    
+    // Dati principali ordine + join
+    const result = await new sql.Request()
+      .input('id', sql.Int, id)
+      .query(`
+        SELECT o.*, d.RagioneSociale AS Dealer, s.StatoEsteso, ofer.Titolo AS Offerta,
+          CONVERT(varchar, o.DataOra, 104) AS DataOrdine,
+          ofer.Crediti, ofer.Segmento, ofer.Tipo
+        FROM dbo.tbOrdini o
+        LEFT JOIN dbo.tbDealers d ON o.idDealer = d.IDDealer
+        LEFT JOIN dbo.tbStatiOrdini s ON o.Stato = s.IDStato
+        LEFT JOIN dbo.tbOfferte ofer ON o.idOfferta = ofer.IDOfferta
+        WHERE o.IDOrdine = @id
+      `);
+    
+    if (!result.recordset || result.recordset.length === 0) {
+      return res.status(404).json({ error: 'Ordine non trovato' });
+    }
+    
+    const ordine = result.recordset[0];
+    
+    // Documenti
+    let documenti = [];
+    try {
+      const docs = await new sql.Request()
+        .input('id', sql.Int, id)
+        .query(`SELECT NomeOriginale AS nome, FileUrl AS url FROM dbo.tbDocumenti WHERE IDOrdine = @id`);
+      documenti = docs.recordset || [];
+    } catch (e) {
+      documenti = [];
+    }
+    ordine.Documenti = documenti;
+    
+    // Storico cambi stato
+    let storico = [];
+    try {
+      const storicoRes = await new sql.Request()
+        .input('id', sql.Int, id)
+        .query(`
+          SELECT DataOra, Utente, StatoPrecedente, StatoNuovo, Nota
+          FROM dbo.tbStoricoOrdini WHERE IDOrdine = @id
+          ORDER BY DataOra DESC
+        `);
+      storico = storicoRes.recordset || [];
+    } catch (e) {
+      storico = [];
+    }
+    ordine.Storico = storico;
+    
+    // Payload da tbDatiOrdine
+    let payload = {};
+    try {
+      const dati = await new sql.Request()
+        .input('id', sql.Int, id)
+        .query(`SELECT TOP 1 Payload FROM dbo.tbDatiOrdine WHERE IDOrdine = @id`);
+      payload = dati.recordset[0]?.Payload ? JSON.parse(dati.recordset[0].Payload) : {};
+    } catch (e) {
+      payload = {};
+    }
+    ordine.Payload = payload;
+    
+    // Payload intestatario
+    let payloadInt = {};
+    try {
+      const datiInt = await new sql.Request()
+        .input('id', sql.Int, id)
+        .query(`SELECT TOP 1 Payload FROM dbo.tbDatiIntestario WHERE IDOrdine = @id`);
+      payloadInt = datiInt.recordset[0]?.Payload ? JSON.parse(datiInt.recordset[0].Payload) : {};
+    } catch (e) {
+      payloadInt = {};
+    }
+    ordine.PayloadIntestario = payloadInt;
+    
+    // File ordine
+    let fileOrdine = [];
+    try {
+      const files = await new sql.Request()
+        .input('id', sql.Int, id)
+        .query(`SELECT * FROM dbo.tbFileOrdine WHERE IDOrdine = @id`);
+      fileOrdine = files.recordset || [];
+    } catch (e) {
+      fileOrdine = [];
+    }
+    ordine.FileOrdine = fileOrdine;
+    
+    res.json(ordine);
+  } catch (err) {
+    console.error('[MASTER][DETTAGLIO ORDINE] Errore:', err);
+    res.status(500).json({ error: 'Errore server' });
+  }
+}); // <-- END /api/master/attivazione/:id
+
+// === Cambio stato ordine/attivazione per MASTER ===
+console.log('DEBUG: REGISTRO CAMBIO STATO MASTER');
+console.log('DEBUG: REGISTRO CAMBIO STATO MASTER');
+console.log('DEBUG: PRIMA DELLA ROUTE CAMBIO STATO');
+app.post('/api/master/attivazione/:id/stato', authenticateToken, onlyMaster, express.json(), async (req, res) => {
+  console.log('DEBUG: DENTRO LA ROUTE CAMBIO STATO');
+  
+  const id = req.params.id;
+  const { nuovoStato, nota } = req.body;
+  
+  if (![1,2,3].includes(Number(nuovoStato))) {
+    return res.status(400).json({ error: 'Stato non valido' });
+  }
+  
+  try {
+    
+    
+    // Recupera stato precedente
+    const prevRes = await new sql.Request()
+      .input('id', sql.Int, id)
+      .query(`SELECT Stato FROM dbo.tbOrdini WHERE IDOrdine = @id`);
+    
+    if (!prevRes.recordset || prevRes.recordset.length === 0) {
+      return res.status(404).json({ error: 'Ordine non trovato' });
+    }
+    
+    const statoPrecedente = prevRes.recordset[0].Stato;
+    
+    // Aggiorna stato e nota
+    await new sql.Request()
+      .input('stato', sql.Int, nuovoStato)
+      .input('nota', sql.NVarChar, nota || '')
+      .input('id', sql.Int, id)
+      .query(`UPDATE dbo.tbOrdini SET Stato = @stato, NoteDealer = @nota WHERE IDOrdine = @id`);
+    
+    // Log storico
+    await new sql.Request()
+      .input('id', sql.Int, id)
+      .input('utente', sql.NVarChar, req.user.email || 'MASTER')
+      .input('statoPrecedente', sql.Int, statoPrecedente)
+      .input('statoNuovo', sql.Int, nuovoStato)
+      .input('nota', sql.NVarChar, nota || '')
+      .query(`INSERT INTO dbo.tbStoricoOrdini (IDOrdine, DataOra, Utente, StatoPrecedente, StatoNuovo, Nota)
+      VALUES (@id, GETDATE(), @utente, @statoPrecedente, @statoNuovo, @nota)`);
+    
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[MASTER][CAMBIO STATO ORDINE] Errore:', err);
+    res.status(500).json({ error: 'Errore server' });
+  }
+}); // <-- END /api/master/attivazione/:id/stato
+
+
+// Endpoint pubblico per ottenere la chiave pubblica Stripe
+app.get('/api/stripe/public-key', (req, res) => {
+  res.json({ publicKey: process.env.STRIPE_PUBLIC_KEY || '' });
+});
+
+// --- ATTENZIONE: il webhook Stripe DEVE essere la primissima route! ---
+// Webhook Stripe - Nessun middleware (nemmeno connessione DB o body parser) deve precedere questa route
+// Questa è l'unica implementazione del webhook Stripe
+app.post('/webhook/stripe', express.raw({type: 'application/json'}), async (req, res) => {
+  console.log('[STRIPE WEBHOOK] Ricevuta richiesta:', {
+    headers: req.headers,
+    rawBody: req.body && req.body.length ? req.body.toString('utf8') : '[vuoto]'
+  });
+  const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  const sig = req.headers['stripe-signature'];
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, stripeWebhookSecret);
+    console.log('[STRIPE WEBHOOK] Evento verificato:', event.type);
+    try {
+      if (event.type === 'payment_intent.succeeded') {
+        const pi = event.data.object;
+        const userId = pi.metadata.userId;
+// --- Validazione userId (deve essere un numero valido) ---
+if (!userId || isNaN(Number(userId)) || userId === 'undefined') {
+  console.error('[STRIPE WEBHOOK] userId non valido nel metadata Stripe:', userId, pi.metadata);
+  return res.status(400).json({ error: 'userId non valido o mancante nel metadata Stripe', userId, metadata: pi.metadata });
+}
+// --- Fine validazione userId ---
+        const amount = pi.amount / 100;
+        const payload = JSON.stringify(pi);
+        let emailCliente = pi.metadata.emailCliente || '';
+const orderType = pi.metadata.orderType || '';
+console.log('[DEBUG][STRIPE] orderType:', orderType, 'metadata:', pi.metadata, 'emailCliente:', emailCliente);
+if (!orderType) {
+  console.warn('[DEBUG][STRIPE] orderType VUOTO! Metadata Stripe:', pi.metadata);
+}
+console.log('[DEBUG][STRIPE] emailCliente:', emailCliente);
+        let carrello = [];
+        let speseSpedizione = 0;
+        let totaleOrdine = amount;
+        let noteOrdine = '';
+        let idStatoOrdineProdotto = 2; // Stato "Pagato" (modifica se necessario)
+
+        // Prova a estrarre il carrello dal metadata o dal campo Payload
+        if (pi.metadata && pi.metadata.carrello) {
+          try { carrello = JSON.parse(pi.metadata.carrello); } catch(e) { carrello = []; }
+        } else if (pi.metadata && pi.metadata.cart) {
+          try { carrello = JSON.parse(pi.metadata.cart); } catch(e) { carrello = []; }
+        } else if (pi.cart) {
+          try { carrello = JSON.parse(pi.cart); } catch(e) { carrello = []; }
+        }
+        if (pi.metadata && pi.metadata.speseSpedizione) {
+          speseSpedizione = Number(pi.metadata.speseSpedizione) || 0;
+        }
+        if (pi.metadata && pi.metadata.totaleOrdine) {
+          totaleOrdine = Number(pi.metadata.totaleOrdine) || totaleOrdine;
+        }
+        // Normalizza sempre in euro
+        if (totaleOrdine > 1000) {
+          totaleOrdine = Math.round(totaleOrdine) / 100;
+        }
+        if (pi.metadata && pi.metadata.noteOrdine) {
+          noteOrdine = pi.metadata.noteOrdine;
+        }
+        
+        try {
+          await connectToDatabase();
+          let idOrdineProdotto = null;
+          // Inserisci ordine SOLO se NON è una ricarica plafond
+          // --- PATCH: aggiorna ordine esistente se ordineId presente ---
+let ordineId = pi.metadata && pi.metadata.ordineId ? parseInt(pi.metadata.ordineId) : null;
+let ordineEsistente = null;
+if (orderType !== 'RIC' && ordineId && !isNaN(ordineId)) {
+  try {
+    const checkOrdine = await new sql.Request()
+      .input('ordineId', sql.Int, ordineId)
+      .query('SELECT TOP 1 * FROM dbo.tbOrdiniProdotti WHERE IDOrdineProdotto = @ordineId');
+    if (checkOrdine.recordset && checkOrdine.recordset.length > 0) {
+      ordineEsistente = checkOrdine.recordset[0];
+    }
+  } catch (e) {
+    console.error('[STRIPE WEBHOOK] Errore verifica ordine esistente:', e);
+  }
+}
+if (orderType !== 'RIC' && ordineEsistente) {
+  // UPDATE ordine esistente
+  try {
+    await new sql.Request()
+      .input('idOrdineProdotto', sql.Int, ordineId)
+      .input('idDealer', sql.Int, userId)
+      .input('DataOra', sql.DateTime, DateTime.now().setZone('Europe/Rome').toFormat('yyyy-MM-dd HH:mm:ss'))
+      .input('OrdineDA', sql.NVarChar, emailCliente)
+      .input('SpeseSpedizione', sql.Int, speseSpedizione)
+      .input('TotaleOrdine', sql.Int, totaleOrdine)
+      .input('Payload', sql.NVarChar(sql.MAX), payload)
+      .input('idStatoOrdineProdotto', sql.Int, idStatoOrdineProdotto)
+      .input('NoteOrdine', sql.NVarChar, noteOrdine)
+      .query(`
+        UPDATE dbo.tbOrdiniProdotti
+        SET idDealer = @idDealer,
+            DataOra = @DataOra,
+            OrdineDA = @OrdineDA,
+            SpeseSpedizione = @SpeseSpedizione,
+            TotaleOrdine = @TotaleOrdine,
+            Payload = @Payload,
+            idStatoOrdineProdotto = @idStatoOrdineProdotto,
+            NoteOrdine = @NoteOrdine,
+            DataStato = @DataOra
+        WHERE IDOrdineProdotto = @idOrdineProdotto
+      `);
+    idOrdineProdotto = ordineId;
+    console.log(`[STRIPE WEBHOOK][UPDATE] Aggiornato ordine esistente IDOrdineProdotto=${ordineId}`);
+  } catch (e) {
+    console.error('[STRIPE WEBHOOK][UPDATE] Errore aggiornamento ordine esistente:', e);
+  }
+} else if (orderType !== 'RIC') {
+  // INSERT ordine nuovo (fallback)
+  const ordineResult = await new sql.Request()
+    .input('idDealer', sql.Int, userId)
+    .input('DataOra', sql.DateTime, DateTime.now().setZone('Europe/Rome').toFormat('yyyy-MM-dd HH:mm:ss'))
+    .input('OrdineDA', sql.NVarChar, emailCliente)
+    .input('SpeseSpedizione', sql.Int, speseSpedizione)
+    .input('TotaleOrdine', sql.Int, totaleOrdine)
+    .input('Payload', sql.NVarChar(sql.MAX), payload)
+    .input('idStatoOrdineProdotto', sql.Int, idStatoOrdineProdotto)
+    .input('NoteOrdine', sql.NVarChar, noteOrdine)
+    .query(`
+      INSERT INTO dbo.tbOrdiniProdotti
+        (idDealer, DataOra, OrdineDA, SpeseSpedizione, TotaleOrdine, Payload, idStatoOrdineProdotto, NoteOrdine, Note4Dealer, NoteInterne, OrdineDaAgente, DataStato)
+      OUTPUT INSERTED.IDOrdineProdotto
+      VALUES
+        (@idDealer, @DataOra, @OrdineDA, @SpeseSpedizione, @TotaleOrdine, @Payload, @idStatoOrdineProdotto, @NoteOrdine, '', '', 0, @DataOra)
+    `);
+  idOrdineProdotto = ordineResult.recordset[0].IDOrdineProdotto;
+  console.log(`[STRIPE WEBHOOK][INSERT] Inserito nuovo ordine IDOrdineProdotto=${idOrdineProdotto}`);
+}
+// --- END PATCH ---          }
+
+          // Inserisci sempre in tbPaymentSessions per pagamenti con carta
+          try {
+            const isProdotto = orderType === 'PROD' || orderType === '';
+            const sessionId = pi.id || null; // PaymentIntent ID per carta
+            const paymentMethod = (pi.payment_method_types && pi.payment_method_types[0]) || 'card';
+            const paymentIntentId = pi.id || null;
+            const sourceType = isProdotto ? 'PROD' : 'RIC';
+            const sourceId = isProdotto ? idOrdineProdotto : null;
+            console.log('[DEBUG][STRIPE] emailCliente usata per RequestedByUser:', emailCliente);
+const requestedByUser = emailCliente || '';
+            const paymentState = pi.status === 'succeeded' ? 'paid' : pi.status;
+            await new sql.Request()
+              .input('SessionID', sql.NVarChar, sessionId)
+              .input('idDealer', sql.Int, userId)
+              .input('Date', sql.DateTime, DateTime.now().setZone('Europe/Rome').toFormat('yyyy-MM-dd HH:mm:ss'))
+              .input('Amount', sql.Int, totaleOrdine)
+              .input('SessionPayload', sql.NVarChar(sql.MAX), JSON.stringify(pi))
+              .input('RequestedByUser', sql.NVarChar, requestedByUser)
+              .input('State', sql.NVarChar, paymentState)
+              .input('PaymentIntentId', sql.NVarChar, paymentIntentId)
+              .input('PaymentMethod', sql.NVarChar, paymentMethod)
+              .input('SourceType', sql.NVarChar, sourceType)
+              .input('SourceID', sql.Int, sourceId)
+              .query(`
+                INSERT INTO dbo.tbPaymentSessions
+                  (SessionID, idDealer, Date, Amount, SessionPayload, RequestedByUser, State, PaymentIntentId, PaymentMethod, SourceType, SourceID)
+                VALUES
+                  (@SessionID, @idDealer, @Date, @Amount, @SessionPayload, @RequestedByUser, @State, @PaymentIntentId, @PaymentMethod, @SourceType, @SourceID)
+              `);
+          } catch (err) {
+            console.error('[PAYMENT SESSIONS] Errore inserimento:', err);
+          }
+          // Inserisci dettagli prodotti SOLO se NON è una ricarica plafond
+          if (orderType !== 'RIC') {
+            console.log('[DEBUG] Carrello al momento del dettaglio:', carrello);
+            if (Array.isArray(carrello) && carrello.length > 0) {
+              for (const prodotto of carrello) {
+                const idOfferta = prodotto.id || prodotto.idOfferta || null;
+                const quantita = prodotto.quantita || 1;
+                let costoUnitario = prodotto.Crediti || prodotto.prezzo || 0;
+                // Se arriva in centesimi (es. > 1000), converti in euro
+                if (costoUnitario > 1000) {
+                  costoUnitario = Math.round(costoUnitario) / 100;
+                }
+                let simType = prodotto.SIMTYPE || null;
+                let simCount = prodotto.SIMCOUNT || 0;
+                // Recupera dati da tbOfferte se mancanti o nulli
+                if (!costoUnitario || !simType || !simCount) {
+                  const offertaRes = await sql.query`SELECT Crediti, SIMTYPE, SIMCOUNT FROM dbo.tbOfferte WHERE IDOfferta = ${idOfferta}`;
+                  const offerta = offertaRes.recordset[0];
+                  if (offerta) {
+                    if (!costoUnitario) costoUnitario = offerta.Crediti || 0;
+                    if (!simType) simType = offerta.SIMTYPE || null;
+                    if (!simCount) simCount = offerta.SIMCOUNT || 0;
+                  }
+                }
+                console.log('[DEBUG] Inserisco dettaglio:', { idOrdineProdotto, idOfferta, quantita, costoUnitario, simType, simCount });
+                try {
+                  await new sql.Request()
+                    .input('idOrdineProdotto', sql.Int, idOrdineProdotto)
+                    .input('idOfferta', sql.Int, idOfferta)
+                    .input('Quantita', sql.Int, quantita)
+                    .input('CostoUnitario', sql.Int, costoUnitario)
+                    .input('SIMTYPE', sql.NVarChar, simType)
+                    .input('SIMCOUNT', sql.Int, simCount)
+                    .query(`
+                      INSERT INTO dbo.tbDettagliOrdiniProdotti
+                        (idOrdineProdotto, idOfferta, Quantita, CostoUnitario, SIMTYPE, SIMCOUNT)
+                      VALUES
+                        (@idOrdineProdotto, @idOfferta, @Quantita, @CostoUnitario, @SIMTYPE, @SIMCOUNT)
+                    `);
+                  console.log('[DB] Dettaglio prodotto inserito in tbDettagliOrdiniProdotti:', prodotto);
+                } catch (err) {
+                  console.error('[ERRORE DETTAGLIO ORDINE]', err);
+                }
+              }
+            } else {
+              console.warn('[WARN] Carrello vuoto o non valido, nessun dettaglio inserito.');
+            }
+            console.log(`[STRIPE WEBHOOK] Ordine inserito: IDOrdineProdotto=${idOrdineProdotto}, Dealer=${userId}, Totale=${totaleOrdine}`);
+          }
+
+        } catch (dbErr) {
+          console.error('[STRIPE WEBHOOK] Errore inserimento ordine:', dbErr);
+        }
+
+        // Se è una ricarica plafond, inserisci anche in tbTransazioni
+        try {
+          if (orderType === 'RIC') {
+            const fonte = 'RIC';
+            const descrizione = 'Ricarica plafond';
+            const crediti = totaleOrdine;
+            const dataOra = DateTime.now().setZone('Europe/Rome').toFormat('yyyy-MM-dd HH:mm:ss');
+            let idAgenteTrans = null;
+            try {
+              const agenteRes = await sql.query`SELECT TOP 1 idAgente FROM dbo.tbDealers WHERE IDDealer = ${userId}`;
+              if (agenteRes.recordset.length) {
+                idAgenteTrans = agenteRes.recordset[0].idAgente || null;
+              }
+            } catch (err) {
+              console.error('[TRANS] Errore recupero idAgente:', err);
+            }
+            let riferimentoTrans = null;
+            try {
+              const refRes = await sql.query`SELECT TOP 1 ID FROM dbo.tbPaymentSessions WHERE idDealer = ${userId} ORDER BY Date DESC`;
+              if (refRes.recordset.length) {
+                riferimentoTrans = refRes.recordset[0].ID;
+              }
+            } catch (err) {
+              console.error('[TRANS] Errore recupero riferimento PaymentSession:', err);
+            }
+            // Fix: always use a valid string for Riferimento
+            if (riferimentoTrans === null || riferimentoTrans === undefined) {
+              riferimentoTrans = '';
+            } else {
+              riferimentoTrans = String(riferimentoTrans);
+            }
+            const payloadTrans = JSON.stringify(pi);
+            const noteTrans = noteOrdine || '';
+            console.log('[DEBUG][tbTransazioni] Inserimento:', {
+  Descrizione: 'RICARICA PLAFOND (Paid)',
+  idDealer: userId,
+  Crediti: crediti,
+  DataOra: dataOra,
+  idAgente: idAgenteTrans,
+  Fonte: fonte,
+  Payload: payloadTrans,
+  Note: noteTrans,
+  Riferimento: riferimentoTrans
+});
+await new sql.Request()
+              .input('Descrizione', sql.NVarChar, 'RICARICA PLAFOND (Paid)')
+              .input('idDealer', sql.Int, userId)
+              .input('Crediti', sql.Int, crediti)
+              .input('DataOra', sql.DateTime, dataOra)
+              .input('idAgente', sql.Int, idAgenteTrans)
+              .input('Fonte', sql.NVarChar, fonte)
+              .input('Payload', sql.NVarChar(sql.MAX), payloadTrans)
+              .input('Note', sql.NVarChar, noteTrans)
+              .input('Riferimento', sql.NVarChar, riferimentoTrans)
+              .query(`
+                INSERT INTO dbo.tbTransazioni
+                  (Descrizione, idDealer, Crediti, DataOra, idAgente, Fonte, Payload, Note, Riferimento)
+                VALUES
+                  (@Descrizione, @idDealer, @Crediti, @DataOra, @idAgente, @Fonte, @Payload, @Note, @Riferimento)
+              `);
+          }
+        } catch (err) {
+          console.error('[TRANS] Errore inserimento ricarica plafond:', err);
+        }
+      }
+      console.log('[STRIPE WEBHOOK] Logica business eseguita');
+    } catch (logicErr) {
+      console.error('[STRIPE WEBHOOK] Errore logica business:', logicErr);
+      // Non rilanciare, rispondi comunque OK
+    }
+    res.json({ received: true });
+    console.log('[STRIPE WEBHOOK] Risposta inviata 200 OK');
+  } catch (err) {
+    console.error('Errore verifica webhook Stripe:', err);
+    res.status(400).send(`Webhook Error: ${err.message}`);
+    console.log('[STRIPE WEBHOOK] Risposta inviata 400 Bad Request');
+  }
+});
+
+// Middleware per il parsing del body JSON
+app.use(express.json());
+
+// Middleware per gestire la connessione al database
+app.use(async (req, res, next) => {
+  try {
+    const isConnected = await connectToDatabase();
+    if (!isConnected) {
+      return res.status(503).json({ 
+        error: 'Servizio non disponibile',
+        message: 'Impossibile connettersi al database. Riprova più tardi.'
+      });
+    }
+    next();
+  } catch (err) {
+    console.error('Errore nel middleware database:', err);
+    res.status(500).json({ 
+      error: 'Errore interno del server',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+});
+
+// Endpoint per registrare richiesta ricarica plafond con bonifico
+app.post('/api/ricarica-plafond-bonifico', authenticateToken, async (req, res) => {
+  try {
+    const { amount, userId } = req.body;
+    const importo = Number(amount);
+    if (![50, 100, 250, 500].includes(importo)) {
+      return res.status(400).json({ error: 'Importo non valido' });
+    }
+    if (!userId) {
+      return res.status(400).json({ error: 'userId mancante' });
+    }
+    // Non inserire nulla in tbTransazioni: la verifica bonifico è manuale
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Errore in /api/ricarica-plafond-bonifico:', err);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  }
+});
+
+// === API per ordini con BONIFICO ===
+
+// Configurazione avanzata per la connessione al database
+// Le opzioni di connessione sono state consolidate qui
+// Le variabili d'ambiente hanno la precedenza sui valori predefiniti
+
+// Avvia il server Express sempre, senza attendere la connessione al database
+const PORT = process.env.PORT || 3002;
+// Connessione pool globale MSSQL UNA SOLA VOLTA all'avvio
+console.log('[DB] Connessione pool globale MSSQL...');
+try {
+  await sql.connect(dbConfig);
+  console.log('[DB] Pool MSSQL connesso!');
+} catch (err) {
+  console.error('[FATAL] Impossibile connettersi al database. Arresto server.', err);
+  process.exit(1);
+}
+
+app.listen(PORT, () => {
+  console.log(`Server Express in esecuzione su http://localhost:${PORT}`);
+});
+
+// Endpoint ultimi ordini per dealer e agente
+app.get('/api/ultimi-ordini', authenticateToken, async (req, res) => {
+  try {
+    const { dealerId, ruoli = [], email, agenteNome } = req.user || {};
+    const isDealer = dealerId != null;
+    const isAgente = ruoli.map(r => r && r.toUpperCase()).includes('AGENTE');
+
+    if (isDealer) {
+      // Dealer: ultimi 5 ordini suoi
+      const result = await new sql.Request()
+        .input('dealerId', sql.Int, dealerId)
+        .query(`
+          SELECT TOP 5 
+            FORMAT(o.DataOra, 'dd/MM/yyyy') AS Data,
+            ISNULL(p.NomeProdotto, 'N/A') AS Prodotto,
+            ISNULL(p.TipoProdotto, '-') AS Tipo,
+            o.TotaleOrdine AS Importo,
+            s.StatoEsteso AS Stato
+          FROM dbo.tbOrdiniProdotti o
+          LEFT JOIN dbo.tbProdotti p ON o.idProdotto = p.IDProdotto
+          LEFT JOIN dbo.tbStatiOrdiniProdotti s ON o.idStatoOrdineProdotto = s.IDStato
+          WHERE o.idDealer = @dealerId
+          ORDER BY o.DataOra DESC
+        `);
+      return res.json(result.recordset || []);
+    } else if (isAgente && agenteNome) {
+      console.log('[ULTIMI-ORDINI][DEBUG] agenteNome:', agenteNome);
+
+      // Agente: trova i suoi dealer, poi gli ordini
+      const dealersRes = await new sql.Request()
+        .input('agente', sql.NVarChar, agenteNome)
+        .query('SELECT IDDealer FROM tbDealers WHERE AGENTE = @agente');
+      const dealerIds = dealersRes.recordset.map(r => r.IDDealer);
+      console.log('[ULTIMI-ORDINI][DEBUG] dealerIds:', dealerIds);
+      if (dealerIds.length === 0) return res.json([]);
+      // Query ultimi ordini per agente secondo la query fornita dall'utente
+      const result = await new sql.Request()
+        .input('agente', sql.NVarChar, agenteNome)
+        .query(`
+          SELECT TOP 5 
+            FORMAT(op.DataOra, 'dd.MM.yyyy') AS Data,
+            d.RagioneSociale AS Dealer,
+            o.Titolo AS Prodotto,
+            FORMAT(op.TotaleOrdine, '''€. ''#,##0.00') AS Importo,
+            so.StatoEsteso AS Stato
+          FROM dbo.tbOrdiniProdotti op
+          INNER JOIN dbo.tbDealers d ON op.idDealer = d.IDDealer
+          INNER JOIN dbo.tbDettagliOrdiniProdotti dop ON op.IDOrdineProdotto = dop.idOrdineProdotto
+          INNER JOIN dbo.tbOfferte o ON dop.idOfferta = o.IDOfferta
+          INNER JOIN dbo.tbStatiOrdini so ON op.idStatoOrdineProdotto = so.IDStato
+          WHERE d.AGENTE = @agente
+          ORDER BY op.DataOra DESC
+        `);
+      return res.json(result.recordset || []);
+    } else {
+      // Né dealer né agente valido
+      return res.status(403).json({ error: 'Dealer o agente non valido' });
+    }
+  } catch (err) {
+    console.error('[ULTIMI-ORDINI] Errore:', err);
+    if (err && err.stack) console.error('[ULTIMI-ORDINI] Stack:', err.stack);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  }
+});
+
+// Endpoint pubblico per ottenere la chiave pubblica Stripe (deve essere prima di qualsiasi middleware di autenticazione!)
+app.get('/api/stripe/public-key', (req, res) => {
+  res.json({ publicKey: process.env.STRIPE_PUBLIC_KEY || '' });
+});
+
+// Endpoint Stripe PaymentIntent standard (compatibile frontend)
+app.post('/api/stripe/create-payment-intent', express.json(), async (req, res) => {
+  try {
+    const { amount, userId, metodo = 'card', ordineId } = req.body;
+    if (!amount || isNaN(Number(amount))) {
+      return res.status(400).json({ error: 'Importo non valido' });
+    }
+    if (!userId) {
+      return res.status(400).json({ error: 'userId mancante' });
+    }
+    // Gestione bonifico: restituisci solo dati bancari, nessun PaymentIntent
+    if (metodo === 'bonifico') {
+      // Aggiorna stato ordine a 21 (IN ATTESA DI BONIFICO)
+      if (ordineId) {
+        try {
+          
+          await new sql.Request()
+            .input('ordineId', sql.Int, ordineId)
+            .input('stato', sql.Int, 21)
+            .input('statoEsteso', sql.NVarChar, 'IN ATTESA DI BONIFICO')
+            .query(`UPDATE dbo.tbOrdini SET Stato = @stato, StatoEsteso = @statoEsteso WHERE IDOrdine = @ordineId`);
+        } catch (e) {
+          console.error('[BONIFICO][ERRORE UPDATE STATO ORDINE]', e);
+        }
+      }
+      const iban = 'IT31Y0306915936100000061953';
+      const intestatario = 'Kim s.r.l.s';
+      const causale = `Ordine ${ordineId || ''} Utente ${userId}`;
+      return res.json({ bonifico: true, iban, intestatario, causale });
+    }
+    // Metodo di pagamento: default 'card', supporta anche 'sepa_debit' se richiesto dal frontend
+    const payment_method_types = metodo === 'sepa' ? ['sepa_debit'] : ['card'];
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(Number(amount) * 100), // euro -> centesimi
+      currency: 'eur',
+      payment_method_types,
+      metadata: { userId: String(userId), metodo, ordineId: ordineId || '' }
+    });
+    res.json({ client_secret: paymentIntent.client_secret });
+  } catch (error) {
+    console.error('[STRIPE] Errore creazione payment intent:', error);
+    res.status(500).json({ error: 'Errore interno Stripe', details: error.message });
+  }
+});
+
+// Endpoint per la ricarica plafond (solo carta di credito)
+app.post('/api/ricarica-plafond', authenticateToken, async (req, res) => {
+  try {
+    const { amount, emailCliente } = req.body;
+    const userId = req.user.id || req.user.userId; // Support both id and userId from JWT
+    // DEBUG: log which field is used
+    console.log('[DEBUG][ricarica-plafond] req.user:', req.user, 'Estratto userId:', userId);
+console.log('[DEBUG][ricarica-plafond] req.user:', req.user, 'Estratto userId:', userId);
+
+    // Logica unica per CARTA DI CREDITO
+    console.log(`[DEBUG] Creazione PaymentIntent per ricarica plafond: Ricevuto body=${JSON.stringify(req.body)}`);
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Number(amount) * 100, // euro -> centesimi
+      currency: 'eur',
+      payment_method_types: ['card'],
+      metadata: { 
+        userId: String(userId), 
+        orderType: 'RIC', 
+        emailCliente: emailCliente 
+      }
+    });
+
+    res.json({ client_secret: paymentIntent.client_secret });
+
+  } catch (error) {
+    console.error('Errore durante la creazione del payment intent per ricarica:', error);
+    res.status(500).json({ error: 'Errore interno del server durante la creazione del pagamento.' });
+  }
+});
+
+// Endpoint Stripe PaymentIntent per pagamenti prodotti (importo libero)
+app.post('/api/stripe/create-product-payment-intent', express.json(), async (req, res) => {
+  try {
+    const { amount, userId, carrello, emailCliente, speseSpedizione, noteOrdine, metadata = {} } = req.body;
+    if (!amount || isNaN(Number(amount))) {
+      return res.status(400).json({ error: 'Importo non valido' });
+    }
+    if (!userId) {
+      return res.status(400).json({ error: 'userId mancante' });
+    }
+    // You can add further validation for carrello, emailCliente, etc. if needed
+    // Prepara un carrello "safe" solo con id e quantità
+    const safeCarrello = carrello && Array.isArray(carrello)
+      ? JSON.stringify(carrello.map(({ id, quantita }) => ({ id, quantita })))
+      : '';
+    // Costruisci un metadata solo con stringhe e campi semplici
+    const safeMetadata = {
+      userId: String(userId),
+      emailCliente: String(emailCliente || ''),
+      carrello: safeCarrello,
+      speseSpedizione: typeof speseSpedizione !== 'undefined' ? String(speseSpedizione) : '0',
+      noteOrdine: String(noteOrdine || ''),
+      ...Object.fromEntries(
+        Object.entries(metadata || {}).filter(([k, v]) => typeof v === 'string' || typeof v === 'number')
+      )
+    };
+    safeMetadata.carrello = safeCarrello;
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(Number(amount) * 100),
+      currency: 'eur',
+      payment_method_types: ['card'],
+      metadata: safeMetadata
+    });
+    res.json({ client_secret: paymentIntent.client_secret });
+  } catch (err) {
+    console.error('Errore creazione PaymentIntent prodotto:', err);
+    res.status(500).json({ error: 'Errore server Stripe' });
+  }
+});
+
+// Endpoint Stripe PaymentIntent per pagamenti carrello ecommerce (importo libero)
+app.post('/api/stripe/cart-payment-intent', express.json(), async (req, res) => {
+  try {
+    const { amount, userId, orderToken } = req.body;
+    if (!amount || isNaN(Number(amount))) {
+      return res.status(400).json({ error: 'Importo non valido' });
+    }
+    if (!userId) {
+      return res.status(400).json({ error: 'userId mancante' });
+    }
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(Number(amount) * 100),
+      currency: 'eur',
+      payment_method_types: ['card'],
+      metadata: {
+        userId: String(userId),
+        orderToken
+      }
+    });
+    res.json({ client_secret: paymentIntent.client_secret });
+  } catch (err) {
+    console.error('Errore creazione PaymentIntent carrello:', err);
+    res.status(500).json({ error: 'Errore server Stripe' });
+  }
+});
+
+// Endpoint per salvataggio pre-ordine temporaneo
+app.post('/api/order/pre-save', express.json(), async (req, res) => {
+  try {
+    const { orderToken, userId, emailCliente, carrello } = req.body;
+    if (!orderToken || !userId || !carrello) {
+      return res.status(400).json({ error: 'orderToken, userId, carrello sono obbligatori' });
+    }
+    
+    await new sql.Request()
+      .input('OrderToken', sql.NVarChar(64), orderToken)
+      .input('UserId', sql.Int, userId)
+      .input('EmailCliente', sql.NVarChar(255), emailCliente || '')
+      .input('Carrello', sql.NVarChar(sql.MAX), carrello)
+      .query(`INSERT INTO dbo.tbOrdiniTemp (OrderToken, UserId, EmailCliente, Carrello) VALUES (@OrderToken, @UserId, @EmailCliente, @Carrello)`);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[PRE-SAVE ERROR]', err);
+    res.status(500).json({ error: 'Errore nel salvataggio pre-ordine' });
+  }
+});
+
+// Endpoint richiesta bonifico (solo log)
+app.post('/api/bonifico-request', express.json(), (req, res) => {
+  const { amount, userId } = req.body;
+  console.log('Richiesta bonifico:', { amount, userId });
+  res.json({ ok: true });
+});
+
+// Endpoint di test semplice
+app.get('/api/test', (req, res) => {
+  res.json({ status: 'ok', message: 'Il server è in esecuzione' });
+});
+
+// Endpoint legacy per la dashboard: reindirizza ai router appropriati in base al ruolo
+app.use('/api/ultime-attivazioni', (req, res, next) => {
+  console.log(`[PRE-AUTH LOG] Richiesta ricevuta per /api/ultime-attivazioni. Reindirizzamento al router appropriato.`);
+  next();
+});
+
+app.get('/api/ultime-attivazioni', authenticateToken, (req, res) => {
+  console.log(`[DEBUG] Richiesta a /api/ultime-attivazioni da utente con ruoli:`, req.user.ruoli);
+  
+  // Reindirizza in base al ruolo
+  if (req.user.ruoli && req.user.ruoli.includes('Agente')) {
+    return res.redirect(307, `/api/agente/ultime-attivazioni${req._parsedUrl.search || ''}`);
+  } else if (req.user.ruoli && req.user.ruoli.includes('Dealer')) {
+    return res.redirect(307, `/api/dealer/ultime-attivazioni${req._parsedUrl.search || ''}`);
+  }
+  return res.status(403).json({ error: 'Ruolo non supportato' });
+});
+
+// Endpoint per le statistiche agente - Spostato in /api/agente/statistiche
+app.get('/api/statistiche-agente', authenticateToken, async (req, res) => {
+  try {
+    const { anno, mese } = req.query;
+    
+    // Crea la connessione al database
+    const pool = sql;
+    const request = pool.request();
+    
+    let query = `
+      SELECT 
+        Operatore, 
+        COUNT(*) as TotaleOrdini,
+        SUM(CASE WHEN Stato = 'Completato' THEN 1 ELSE 0 END) as OrdiniCompletati
+      FROM dbo.tbOrdini
+      WHERE 1=1`;
+
+    // Aggiungi filtri in base ai parametri
+    if (anno) {
+      query += ` AND YEAR(DataInserimento) = @anno`;
+      request.input('anno', sql.Int, parseInt(anno));
+    }
+    if (mese) {
+      query += ` AND MONTH(DataInserimento) = @mese`;
+      request.input('mese', sql.Int, parseInt(mese));
+    }
+
+    query += ` GROUP BY Operatore ORDER BY TotaleOrdini DESC`;
+    
+    const result = await request.query(query);
+    
+    if (result.recordset && result.recordset.length > 0) {
+      res.json(result.recordset);
+    } else {
+      console.log('Nessun dato trovato per i criteri specificati');
+      res.json([]);
+    }
+  } catch (err) {
+    console.error('Errore in /api/statistiche-agente:', err);
+    console.error('Stack trace:', err.stack);
+    res.status(500).json({ 
+      error: 'Errore del server', 
+      message: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
+  }
+});
+
+// Endpoint debug: recupera l'ultimo payment_intent da Stripe e il relativo payload dal DB
+app.get('/api/stripe/ultimo-payload', authenticateToken, async (req, res) => {
+  try {
+    try {
+      const transactions = await stripe.balanceTransactions.list({ limit: 10 });
+      // Trova la prima transazione di tipo 'charge'
+      const lastCharge = transactions.data.find(tx => tx.type === 'charge');
+      if (!lastCharge) return res.status(404).json({ error: 'Nessuna transazione di tipo charge trovata' });
+
+      let paymentIntentId = lastCharge.payment_intent;
+      // Se non c'è direttamente, recupera la charge e prendi il payment_intent
+      if (!paymentIntentId && lastCharge.source && lastCharge.source.startsWith('ch_')) {
+        const charge = await stripe.charges.retrieve(lastCharge.source);
+        paymentIntentId = charge.payment_intent;
+      }
+      if (!paymentIntentId) return res.status(404).json({ error: 'Payment intent non trovato' });
+
+      // Recupera il payload da Stripe
+      const paymentIntent = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+      // Recupera il payload dal DB
+      
+      const dbRes = await sql.query`SELECT TOP 1 * FROM dbo.tbTransazioni WHERE Payload LIKE '%${paymentIntentId}%' ORDER BY idTransazione DESC`;
+      const dbPayload = dbRes.recordset.length > 0 ? dbRes.recordset[0].Payload : null;
+
+      res.json({
+        payment_intent_id: paymentIntentId,
+        stripe_payload: paymentIntent,
+        db_payload: dbPayload
+      });
+    } catch (err) {
+      // Debug per errori Stripe
+      if (err && err.type === 'StripeAuthenticationError') {
+        console.error('[STRIPE][AUTH] Errore autenticazione Stripe:', err.message);
+        return res.status(500).json({ error: 'Errore autenticazione Stripe: controlla la chiave e l’ambiente', details: err.message });
+      }
+      res.status(500).json({ error: err.message });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Endpoint movimenti Stripe
+app.get('/api/stripe/movimenti', authenticateToken, async (req, res) => {
+  try {
+    // Recupera le ultime 20 transazioni dal conto Stripe
+    const transactions = await stripe.balanceTransactions.list({ limit: 1000 });
+    console.log('[DEBUG][MOVIMENTI] BalanceTransaction IDs:', transactions.data.map(tx => tx.id));
+    console.log('[DEBUG][DB] dbConfig usata:', dbConfig);
+    
+    const result = [];
+    for (const tx of transactions.data) {
+      console.log('[DEBUG][MOVIMENTI] tx:', tx);
+      console.log('[DEBUG][MOVIMENTI][MATCH] tx.id:', tx.id, '| tx.source:', tx.source, '| tx.payment_intent:', tx.payment_intent);
+      let chargePaymentIntent = undefined;
+      let dealer = '';
+      let descrizione = '';
+      // Default tipo
+      let tipo = tx.type === 'charge' ? 'INCASSO' : (tx.type === 'payout' ? 'EROGAZIONE' : tx.type.toUpperCase());
+      // Default descrizione
+      if (tx.type === 'payout') {
+        descrizione = 'PAGAMENTO SU VS CONTO';
+      } else if (tx.type === 'charge') {
+        let transRes;
+        console.log('[DEBUG][MOVIMENTI] tx.id:', tx.id);
+        console.log('[DEBUG][MOVIMENTI] tx.payment_intent:', tx.payment_intent);
+        console.log('[DEBUG][MOVIMENTI] tx.source:', tx.source);
+        let paymentIntentToSearch = tx.payment_intent;
+        if (!paymentIntentToSearch && tx.source && tx.source.startsWith('ch_')) {
+          // Recupera la charge da Stripe e prendi il payment_intent
+          try {
+            const charge = await stripe.charges.retrieve(tx.source);
+            chargePaymentIntent = charge.payment_intent;
+            paymentIntentToSearch = charge.payment_intent;
+            console.log('[DEBUG][MOVIMENTI][MATCH] Charge recuperata da Stripe:', charge.id, '-> payment_intent:', charge.payment_intent);
+          } catch (e) {
+            console.log('[DEBUG][MOVIMENTI][MATCH] Errore recupero charge Stripe:', tx.source, e.message);
+          }
+        }
+        console.log('[DEBUG][MOVIMENTI][MATCH] tx.id:', tx.id, '| tx.source:', tx.source, '| tx.payment_intent:', tx.payment_intent, '| charge.payment_intent:', chargePaymentIntent, '| paymentIntentToSearch usato nella query:', paymentIntentToSearch);
+        console.log('[DEBUG][MOVIMENTI] paymentIntentToSearch usato nella query:', paymentIntentToSearch);
+        if (paymentIntentToSearch) {
+          const likePattern = `%${paymentIntentToSearch}%`;
+          console.log('[DEBUG][MOVIMENTI] CERCA PER payment_intent (LIKE pattern):', likePattern);
+          transRes = await sql.query`SELECT TOP 1 idDealer, Descrizione, Payload FROM dbo.tbTransazioni WHERE Payload LIKE ${likePattern}`;
+          console.log('[DEBUG][MOVIMENTI][QUERY RESULT]', transRes && transRes.recordset);
+        }
+        // Fallback: se ancora nulla, cerca per source
+        if ((!transRes || transRes.recordset.length === 0) && tx.source) {
+          console.log('[DEBUG][MOVIMENTI] CERCA PER source (fallback):', tx.source);
+          transRes = await sql.query`SELECT TOP 1 idDealer, Descrizione, Payload FROM dbo.tbTransazioni WHERE Payload LIKE '%${tx.source}%'`;
+        }
+        if (transRes && transRes.recordset.length > 0) {
+          console.log('[DEBUG][MOVIMENTI] transRes.recordset:', transRes.recordset);
+          const row = transRes.recordset[0];
+          console.log('[DEBUG][MOVIMENTI] idDealer trovato:', row.idDealer);
+          const dealerRes = await sql.query`SELECT RagioneSociale FROM dbo.tbDealers WHERE IDDealer = ${row.idDealer}`;
+          console.log('[DEBUG][MOVIMENTI] dealerRes.recordset:', dealerRes.recordset);
+          if (dealerRes.recordset.length > 0) {
+            dealer = dealerRes.recordset[0].RagioneSociale;
+          }
+          console.log('[DEBUG][MOVIMENTI] Dealer assegnato:', dealer);
+          descrizione = row.Descrizione || '';
+        } else {
+          console.log('[DEBUG][MOVIMENTI] Nessuna transazione trovata per la ricerca. Dealer rimane vuoto.');
+        }
+      }
+      result.push({
+        data: tx.created ? new Date(tx.created * 1000).toLocaleString('it-IT') : '',
+        dealer,
+        tipo,
+        importo: (tx.amount / 100).toFixed(2),
+        valuta: tx.currency ? tx.currency.toUpperCase() : '',
+        descrizione
+      });
+    }
+    res.json({ success: true, data: result });
+  } catch (err) {
+    console.error('[STRIPE][MOVIMENTI] Errore:', err);
+    res.status(500).json({ success: false, error: 'Errore recupero movimenti Stripe', details: err.message });
+  }
+});
+
+// Endpoint di debug connessione DB
+app.get('/api/debug-db', async (req, res) => {
+  try {
+    const sql = require('mssql');
+    const pool = sql;
+    const result = await pool.request().query('SELECT 1 as test');
+    res.json({ status: 'success', result: result.recordset });
+  } catch (err) {
+    res.status(500).json({ status: 'error', error: err, message: err.message });
+  }
+});
+
+// Endpoint di verifica della connessione al database
+app.get('/api/check-db', async (req, res) => {
+  try {
+    const sql = require('mssql');
+    const pool = sql;
+    const result = await pool.request().query('SELECT name FROM sys.databases');
+    res.json({
+      status: 'success',
+      databases: result.recordset,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Errore nel test del database:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Errore durante il test del database',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Endpoint di verifica della connessione al database specifico
+app.get('/api/check-db-connection', async (req, res) => {
+  try {
+    const pool = sql;
+    await pool.request().query('SELECT 1');
+    res.json({ status: 'success', message: 'Connessione al database riuscita' });
+  } catch (err) {
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+// Endpoint temporaneo per testare la verifica password ASP.NET Identity
+app.post('/api/test-password', express.json(), (req, res) => {
+  const { password, hash } = req.body;
+  try {
+    const result = aspnetIdentityPw.validatePassword(password, hash);
+    res.json({ valid: result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// CORS middleware per sviluppo
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
+// Endpoint per restituire i templates
+
+app.get('/api/templates', async (req, res) => {
+  try {
+    const data = await fs.promises.readFile('/home/ubuntu/backend/templates.json', 'utf8');
+    res.json(JSON.parse(data));
+  } catch (err) {
+    res.status(500).json({ error: 'Impossibile leggere templates.json', details: err.message });
+  }
+});
+
+// Endpoint per il controllo dello stato del server
+app.get('/health', async (req, res) => {
+  try {
+    // Verifica la connessione al database
+    await sql.query('SELECT 1');
+    
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      database: 'connected'
+    });
+  } catch (error) {
+    console.error('Health check failed:', error);
+    res.status(500).json({
+      status: 'error',
+      error: 'Database connection failed',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+app.post('/api/login', express.json(), async (req, res) => {
+  console.log('Richiesta di login ricevuta:', {
+    headers: req.headers,
+    body: req.body,
+    ip: req.ip,
+    method: req.method,
+    url: req.originalUrl
+  });
+
+  const { username, email, password } = req.body;
+  const loginIdentifier = email || username;
+
+  if (!loginIdentifier || !password) {
+    console.log('Credenziali mancanti:', {
+      email: !!email,
+      username: !!username,
+      password: !!password
+    });
+    return res.status(400).json({
+      error: 'Credenziali mancanti',
+      message: 'Inserisci email/username e password'
+    });
+  }
+
+  try {
+    
+    let userType = null;
+    let user = null;
+    let ruoli = [];
+    let agenteNome = null;
+
+    // 1. Prova login come agente (ASP.NET Identity)
+    console.log('[DEBUG][POOL] sql.connected:', sql.connected);
+    let agentResult = await new sql.Request()
+      .input('username', sql.NVarChar, loginIdentifier)
+      .query(`SELECT TOP 1 * FROM dbo.AspNetUsers WHERE UserName = @username OR Email = @username`);
+    console.log('[DEBUG][POOL] sql.active:', sql.activeConnection);
+    if (agentResult.recordset && agentResult.recordset.length > 0) {
+      userType = 'agente';
+      user = agentResult.recordset[0];
+      console.log('[LOGIN] Utente agente trovato:', user);
+      // Verifica password hash ASP.NET Identity
+      const hash = user.PasswordHash;
+      // Recupera ruoli e verifica se l'utente ha il ruolo AGENTE normalizzato
+      const agentRoleResult = await new sql.Request()
+        .input('userId', sql.NVarChar, user.Id)
+        .query(`SELECT r.Name, r.NormalizedName FROM dbo.AspNetUserRoles ur JOIN dbo.AspNetRoles r ON ur.RoleId = r.Id WHERE ur.UserId = @userId`);
+      ruoli = agentRoleResult.recordset.map(r => r.Name);
+      const isAgente = agentRoleResult.recordset.some(r => r.NormalizedName === 'AGENTE');
+      const isMaster = agentRoleResult.recordset.some(r => r.NormalizedName === 'MASTER');
+      const isMasterProdotti = agentRoleResult.recordset.some(r => r.NormalizedName === 'MASTERPRODOTTI');
+      const isSuperMaster = agentRoleResult.recordset.some(r => r.NormalizedName === 'SUPERMASTER');
+      if (isSuperMaster) {
+        // Autentica come supermaster
+        console.log('[LOGIN] Utente AspNetUsers con ruolo SUPERMASTER:', loginIdentifier);
+        const isPasswordValid = await aspnetIdentityPw.validatePassword(password, user.PasswordHash);
+        if (!isPasswordValid) {
+          console.log('[LOGIN] Password non valida per supermaster:', loginIdentifier);
+          return res.status(401).json({
+            error: 'Credenziali non valide',
+            message: 'La password inserita non è corretta.'
+          });
+        }
+        const tokenPayload = {
+          userId: user.Id,
+          email: user.Email,
+          ruoli,
+          supermaster: true
+        };
+        const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '2h' });
+        return res.json({
+          token,
+          ruoli,
+          userType: 'supermaster'
+        });
+      } else if (!isAgente && isMaster) {
+        // Autentica come master
+        console.log('[LOGIN] Utente AspNetUsers con ruolo MASTER:', loginIdentifier);
+        console.log('[DEBUG] MASTER PasswordHash:', user.PasswordHash);
+        const isPasswordValid = await aspnetIdentityPw.validatePassword(password, user.PasswordHash);
+        if (!isPasswordValid) {
+          console.log('[LOGIN] Password non valida per master:', loginIdentifier);
+          return res.status(401).json({
+            error: 'Credenziali non valide',
+            message: 'La password inserita non è corretta.'
+          });
+        }
+        const tokenPayload = {
+          userId: user.Id,
+          email: user.Email,
+          ruoli,
+          master: true
+        };
+        const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '2h' });
+        return res.json({
+          token,
+          ruoli,
+          userType: 'master'
+        });
+      } else if (!isAgente && isMasterProdotti) {
+        // Autentica come masterprodotti
+        console.log('[LOGIN] Utente AspNetUsers con ruolo MASTERPRODOTTI:', loginIdentifier);
+        const isPasswordValid = await aspnetIdentityPw.validatePassword(password, user.PasswordHash);
+        if (!isPasswordValid) {
+          console.log('[LOGIN] Password non valida per masterprodotti:', loginIdentifier);
+          return res.status(401).json({
+            error: 'Credenziali non valide',
+            message: 'La password inserita non è corretta.'
+          });
+        }
+        const tokenPayload = {
+          userId: user.Id,
+          email: user.Email,
+          ruoli,
+          masterprodotti: true
+        };
+        const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '2h' });
+        return res.json({
+          token,
+          ruoli,
+          userType: 'masterprodotti'
+        });
+      } else if (!isAgente) {
+        console.log('[LOGIN] Utente AspNetUsers senza ruolo "agenti" né "master", passo a dealer:', loginIdentifier);
+        // Skip agent/master login, proceed to dealer login logic
+      } else {
+        // Verifica password hash ASP.NET Identity SOLO se ha ruolo 'agenti'
+        const hash = user.PasswordHash;
+        const isPasswordValid = await aspnetIdentityPw.validatePassword(password, hash);
+        if (!isPasswordValid) {
+          console.log('[LOGIN] Password non valida per agente:', loginIdentifier);
+          return res.status(401).json({
+            error: 'Credenziali non valide',
+            message: 'La password inserita non è corretta.'
+          });
+        }
+        // Recupera CodiceAgenteLarge da tbAgenti tramite RecapitoEmail
+        let agenteNomeDB = null;
+        try {
+          const agentiQuery = await new sql.Request()
+            .input('email', sql.NVarChar, user.Email || user.UserName)
+            .query("SELECT CodiceAgenteLarge FROM dbo.tbAgenti WHERE RecapitoEmail = @email");
+          if (agentiQuery.recordset && agentiQuery.recordset.length > 0) {
+            agenteNomeDB = agentiQuery.recordset[0].CodiceAgenteLarge;
+          }
+        } catch (e) {
+          console.error('[LOGIN] Errore lookup CodiceAgenteLarge da tbAgenti:', e);
+        }
+        agenteNome = agenteNomeDB || user.Nome || user.UserName || null;
+        // Genera JWT
+        const tokenPayload = {
+          userId: user.Id,
+          email: user.Email,
+          ruoli,
+          agenteNome
+        };
+        console.log('[LOGIN] Generazione token per agente:', tokenPayload);
+        const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '2h' });
+        return res.json({
+          token,
+          ruoli,
+          agenteNome: agenteNome,
+          userType: 'agente'
+        });
+      }
+    }
+
+    // 2. Prova login come dealer (legacy)
+    const request = new sql.Request();
+    request.input('email', sql.NVarChar, loginIdentifier);
+    const query = `SELECT * FROM dbo.tbDealers WHERE RecapitoEmail = @email`;
+    console.log('Esecuzione query dealer:', query, 'con email:', loginIdentifier);
+    const result = await request.query(query);
+    if (!result.recordset || result.recordset.length === 0) {
+      console.log('Nessun dealer trovato per email:', loginIdentifier);
+      return res.status(401).json({
+        error: 'Credenziali non valide',
+        message: 'Nessun account trovato con questa email.'
+      });
+    }
+    const dealer = result.recordset[0];
+    // Password in chiaro (legacy)
+    const isPasswordValid = password === dealer.TmpPasswd;
+    if (!isPasswordValid) {
+      console.log('Password non valida per il dealer:', dealer.RecapitoEmail);
+      return res.status(401).json({
+        error: 'Credenziali non valide',
+        message: 'La password inserita non è corretta.'
+      });
+    }
+    // Dealer: genera JWT con ruolo dealer
+    const tokenPayload = {
+      userId: dealer.IDDealer,
+      email: dealer.RecapitoEmail,
+      dealerId: dealer.IDDealer,
+      phoneNumber: dealer.RecapitoCell || '',
+      ruoli: ['dealer'],
+      dealerName: dealer.RagioneSociale || dealer.RecapitoEmail,
+      agenteNome: dealer.AGENTE || null  // Aggiunto il campo agenteNome al token
+    };
+    const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '2h' });
+    // Formatta telefono
+    let phoneNumber = 'web_user';
+    if (dealer.RecapitoCell) {
+      const cleanNumber = dealer.RecapitoCell.replace(/\D/g, '').slice(-10);
+      if (cleanNumber.length === 10) {
+        phoneNumber = '39' + cleanNumber;
+      }
+    }
+    // DISABILITATO: Invio notifica WhatsApp su login dealer
+    /*
+    if (dealer.RecapitoCell) {
+      const whatsappPayload = {
+        to: phoneNumber,
+        message: `Login effettuato: accesso area riservata dealer ${dealer.RagioneSociale} (${dealer.RecapitoEmail})`
+      };
+      try {
+        console.log('[NOTIFICA][WHATSAPP][LOGIN][INVIO] Numero:', whatsappPayload.to, '| Messaggio:', whatsappPayload.message);
+        const waResp = await axios.post(process.env.WHATSAPP_BOT_URL, whatsappPayload);
+        console.log('[NOTIFICA][WHATSAPP][LOGIN][SUCCESS] Risposta bot:', waResp.data);
+      } catch (waErr) {
+        console.error('[NOTIFICA][WHATSAPP][LOGIN][ERRORE]', waErr);
+      }
+    }
+    */
+    return res.json({
+      token,
+      dealerName: dealer.RagioneSociale || dealer.RecapitoEmail,
+      phoneNumber,
+      userType: 'dealer',
+      ruoli: ['dealer']
+    });
+  } catch (err) {
+    console.error('Errore durante il login:', err);
+    res.status(500).json({
+      error: 'Errore server',
+      details: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
+  }
+});
+
+app.get('/api/attivazioni', authenticateToken, async (req, res) => {
+  try {
+    // Estrai il token JWT dall'header Authorization
+    const authHeader = req.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Token mancante' });
+    }
+    const token = authHeader.split(' ')[1];
+    let decoded;
+    try {
+      // Token già verificato dal middleware; dati utente disponibili in req.user
+      if (!req.user.userId) {
+        return res.status(401).json({ error: 'Token non valido: userId mancante' });
+      }
+    } catch (err) {
+      return res.status(401).json({ error: 'Token non valido o scaduto' });
+    }
+
+    // Usa dealerId dal token JWT
+    const dealerId = req.user.dealerId;
+    if (!dealerId) {
+      return res.status(401).json({ error: 'ID dealer non valido' });
+    }
+
+    console.log('Esecuzione query attivazioni per dealer ID:', dealerId);
+    
+    try {
+      // Trova la ragione sociale del dealer
+      
+      const request = new sql.Request();
+      request.input('idDealer', sql.Int, dealerId);
+      const dealerQuery = `SELECT RagioneSociale FROM dbo.tbDealers WHERE IDDealer = @idDealer`;
+      const dealerRes = await request.query(dealerQuery);
+      
+      if (!dealerRes.recordset.length) {
+        return res.status(404).json({ error: 'Dealer non trovato' });
+      }
+      
+      const ragioneSociale = dealerRes.recordset[0].RagioneSociale;
+      
+      // Query per ottenere le ultime 5 attivazioni
+      const query = `
+        SELECT TOP 5
+          CONVERT(VARCHAR(10), o.DataOra, 120) AS Data,
+          offr.Titolo AS Titolo,
+          offr.Tipo AS Tipo,
+          offr.Segmento AS Segmento,
+          so.StatoEsteso AS Stato
+        FROM dbo.tbOrdini o
+        LEFT JOIN dbo.tbStatiOrdini so ON o.Stato = so.IDStato
+        LEFT JOIN dbo.TbOfferte offr ON o.idOfferta = offr.IDOfferta
+        WHERE o.idDealer = @idDealer
+        ORDER BY o.DataOra DESC`;
+      
+      console.log('Esecuzione query attivazioni:', query);
+      
+      const result = await request.query(query);
+      
+      console.log('Risultati query attivazioni:', JSON.stringify(result.recordset, null, 2));
+      
+      return res.json({ 
+        ragioneSociale, 
+        attivazioni: result.recordset || [] 
+      });
+      
+    } catch (err) {
+      console.error('Errore durante l\'esecuzione della query attivazioni:', err);
+      throw err; // Rilancia l'errore per la gestione nel blocco catch esterno
+    }
+  } catch (err) {
+    console.error('Errore in /api/attivazioni:', err);
+    // Verifica se la risposta è già stata inviata
+    if (!res.headersSent) {
+      return res.status(500).json({ 
+        error: 'Errore del server', 
+        details: err.message,
+        code: err.code
+      });
+    } else {
+      console.error('Tentativo di inviare una risposta multipla per la stessa richiesta');
+    }
+  }
+});
+
+app.get('/api/ordini', authenticateToken, async (req, res) => {
+  try {
+    // Estrai il token JWT dall'header Authorization
+    const authHeader = req.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Token mancante' });
+    }
+    const token = authHeader.substring(7);
+    let email;
+    try {
+      const // Token già verificato dal middleware; dati utente disponibili in req.user
+      email = req.user.email;
+    } catch (err) {
+      return res.status(401).json({ error: 'Token non valido' });
+    }
+    
+    const request = new sql.Request();
+    request.input('email', sql.NVarChar, email);
+    // Trova idDealer e RagioneSociale dell'utente loggato
+    const dealerQuery = `SELECT TOP 1 IDDealer, RagioneSociale FROM dbo.tbDealers WHERE RecapitoEmail = @email`;
+    const dealerRes = await request.query(dealerQuery);
+    if (!dealerRes.recordset.length) {
+      return res.status(404).json({ error: 'Dealer non trovato per questa email' });
+    }
+    const idDealer = dealerRes.recordset[0].IDDealer;
+    const ragioneSociale = dealerRes.recordset[0].RagioneSociale;
+    // Query per ultimi 5 ordini del dealer
+    request.input('idDealer', sql.Int, idDealer);
+    const query = `
+      SELECT TOP 5
+        CONVERT(VARCHAR(10), op.DataOra, 120) AS Data,
+        of.Titolo AS Prodotto,
+        of.Tipo AS Tipo,
+        op.TotaleOrdine AS Importo,
+        op.SpeseSpedizione,
+        op.idStatoOrdineProdotto AS Stato
+      FROM dbo.tbOrdiniProdotti op
+      LEFT JOIN dbo.tbOfferte of ON op.idOfferta = of.IDOfferta
+      WHERE op.idDealer = @idDealer
+      ORDER BY op.DataOra DESC`;
+
+    const result = await request.query(query);
+    res.json({ ragioneSociale, ordini: result.recordset });
+  } catch (err) {
+    console.error('ERRORE QUERY ORDINI:', err.message, err.stack);
+    if (!res.headersSent) {
+      return res.status(500).json({ 
+        error: 'Errore del server', 
+        details: err.message,
+        code: err.code
+      });
+    } else {
+      console.error('Tentativo di inviare una risposta multipla per la stessa richiesta');
+    }
+  }
+});
+
+// --- API: ATTIVAZIONI (POST) ---
+// Multer setup for parsing multipart/form-data
+const upload = multer({ limits: { fileSize: 1 * 1024 * 1024 } }); // 1MB per file
+
+app.post('/api/attivazioni', authenticateToken, upload.any(), async (req, res) => {
+  console.log('[DEBUG] /api/attivazioni req.body:', req.body);
+  console.log('[DEBUG] /api/attivazioni req.files:', req.files);
+
+  // --- PATCH: Parse intestatario and altriDati fields if they are JSON strings ---
+  let intestatario = req.body.intestatario;
+  let altriDati = req.body.altriDati;
+  try {
+    if (typeof intestatario === 'string' && intestatario.trim().length > 0) {
+      intestatario = JSON.parse(intestatario);
+      req.body.intestatario = intestatario;
+    }
+  } catch (e) {
+    console.error('[ATTIVAZIONE][ERRORE] intestatario JSON parsing failed:', e, intestatario);
+    intestatario = {};
+    req.body.intestatario = {};
+  }
+  try {
+    if (typeof altriDati === 'string' && altriDati.trim().length > 0) {
+      altriDati = JSON.parse(altriDati);
+      req.body.altriDati = altriDati;
+    }
+  } catch (e) {
+    console.error('[ATTIVAZIONE][ERRORE] altriDati JSON parsing failed:', e, altriDati);
+    altriDati = {};
+    req.body.altriDati = {};
+  }
+  console.log('[DEBUG][PATCH] intestatario (parsed):', intestatario);
+  console.log('[DEBUG][PATCH] altriDati (parsed):', altriDati);
+  const transaction = new sql.Transaction();
+  try {
+    
+    await transaction.begin();
+    const request = new sql.Request(transaction);
+
+    // 1. Estrai dati principali dal body
+    const {
+      idOfferta,
+      files = [], // [{ tipoFile, fileUID, nomeFile }]
+      intestatario = {}, // dati intestatario (JSON)
+      simType = null,
+      simCount: originalSimCount = null,
+      noteInterne = null,
+      noteDealer = null,
+      stato = 0, // DA_ELABORARE
+      plafondCost = 0, // se > 0 scala il plafond
+      utente = null,   // email utente
+    } = req.body;
+    // Usa direttamente altriDati come oggetto (già parsato dalla patch iniziale)
+    const altriDati = req.body.altriDati || {};
+    // Default simCount to 1 if not provided or invalid
+    const simCount = originalSimCount && !isNaN(originalSimCount) ? Number(originalSimCount) : 1;
+    const idDealer = req.user.dealerId;
+    const idAgente = req.user.userId || null;
+    const now = new Date();
+
+    // 2. Inserisci in tbOrdini
+    const ordineResult = await request
+      .input('DataOra', sql.DateTime, now)
+      .input('idAgente', sql.Int, idAgente)
+      .input('idDealer', sql.Int, idDealer)
+      .input('idOfferta', sql.Int, idOfferta)
+      .input('Stato', sql.Int, stato)
+      .input('Utente', sql.NVarChar, utente)
+      .input('NoteInterne', sql.NVarChar, noteInterne)
+      .input('NoteDealer', sql.NVarChar, noteDealer)
+      .input('SIMTYPE', sql.NVarChar, simType)
+      .input('SIMCOUNT', sql.Int, simCount)
+      .input('DataStato', sql.DateTime, now)
+      .query(`INSERT INTO dbo.tbOrdini (DataOra, idAgente, idDealer, idOfferta, Stato, Utente, NoteInterne, NoteDealer, SIMTYPE, SIMCOUNT, DataStato)
+              OUTPUT INSERTED.IDOrdine
+              VALUES (@DataOra, @idAgente, @idDealer, @idOfferta, @Stato, @Utente, @NoteInterne, @NoteDealer, @SIMTYPE, @SIMCOUNT, @DataStato)`);
+    const idOrdine = ordineResult.recordset[0].IDOrdine;
+
+    // 3. Inserisci in tbDatiIntestario
+    // Solo dati anagrafici strettamente necessari per tbDatiIntestario
+    // Mappa i campi reali di intestatario verso quelli richiesti dal DB
+    const intestatarioMapping = {
+      NOME_E_COGNOME_INTESTATARIO_CONTRATTO: intestatario['NOME_E_COGNOME'] || '',
+      CODICE_FISCALE_INTESTATARIO: intestatario['CODICE_FISCALE'] || '',
+      DATA_DI_NASCITA: intestatario['DATA_DI_NASCITA'] || '',
+      LUOGO_DI_NASCITA: intestatario['LUOGO_DI_NASCITA'] || '',
+      CAP: intestatario['CAP'] || '',
+      CITTA: intestatario['CITTA'] || '',
+      INDIRIZZO_E_CIVICO_ATTIVAZIONE: intestatario['INDIRIZZO_E_CIVICO_ATTIVAZIONE'] || '',
+      INDIRIZZO_E_CIVICO_SPEDIZIONE_DECODER: intestatario['INDIRIZZO_E_CIVICO_SPEDIZIONE_DECODER'] || '',
+      RECAPITO_DI_RIFERIMENTO: intestatario['RECAPITO_DI_RIFERIMENTO'] || '',
+      EMAIL: intestatario['EMAIL'] || '',
+      PEC: intestatario['PEC'] || ''
+    };
+    await (new sql.Request(transaction))
+      .input('IDOrdine', sql.Int, idOrdine)
+      .input('Tipo', sql.Int, 0)
+      .input('Payload', sql.NVarChar(sql.MAX), JSON.stringify(intestatarioMapping))
+      .query(`INSERT INTO dbo.tbDatiIntestario (IDOrdine, Tipo, Payload) VALUES (@IDOrdine, @Tipo, @Payload)`);
+
+    // ... (rest of the code remains the same)
+
+    let altriDatiObj = altriDati;
+    if (typeof altriDati === 'string') {
+      try { altriDatiObj = JSON.parse(altriDati); } catch(e) { altriDatiObj = {}; }
+    }
+    console.log('[DEBUG][ATTIVAZIONE] altriDati (obj):', altriDatiObj);
+    // --- COSTRUISCI PAYLOAD SOLO CON I CAMPI RICHIESTI (NO ANAGRAFICA) ---
+const campiOrdine = [
+  'INTESTATARIO_METODO_DI_PAGAMENTO',
+  'IBAN',
+  'TIPO_DI_DOCUMENTO',
+  'NUMERO_DOCUMENTO',
+  'DATA_E_LUOGO_RILASCIO_DOCUMENTO',
+  'ENTE_RILASCIO_DOCUMENTO',
+  'SCADENZA_DOCUMENTO',
+  'NUMERO_DA_PASSARE',
+  'GESTORE_DI_PROVENIENZA',
+  'SERIALE_SIM_DA_ATTIVARE',
+  'NOTE',
+  'CODICE_DI_MIGRAZIONE',
+  'NUMERO_DI_RETE_FISSA_DA_PASSARE'
+];
+const payloadOrdine = {};
+[...Object.entries(intestatario || {}), ...Object.entries(altriDatiObj || {})].forEach(([k, v]) => {
+  if (campiOrdine.includes(k)) payloadOrdine[k] = v;
+});
+    console.log('[DEBUG][ATTIVAZIONE] payloadOrdine finale:', payloadOrdine);
+    // 4. Inserisci in tbDatiOrdine
+    await (new sql.Request(transaction))
+      .input('IDOrdine', sql.Int, idOrdine)
+      .input('AppliedConfig', sql.NVarChar, null)
+      .input('Payload', sql.NVarChar(sql.MAX), JSON.stringify(payloadOrdine))
+      .query(`INSERT INTO dbo.tbDatiOrdine (IDOrdine, AppliedConfig, Payload) VALUES (@IDOrdine, @AppliedConfig, @Payload)`);
+
+    // 5. Inserisci file in tbFileOrdine
+    // Usa import ESM in alto:
+// import { v4 as uuidv4 } from 'uuid';
+// (già importato in testa al file o aggiungere se manca)
+
+    for (const file of req.files || []) {
+      // Map multer fields to expected DB structure
+      const tipoFile = file.fieldname;
+      const originalName = file.originalname;
+      const fileUID = uuidv4();
+      const nomeFile = `${fileUID}_${originalName}`;
+      await (new sql.Request(transaction))
+        .input('IDOrdine', sql.Int, idOrdine)
+        .input('TipoFile', sql.NVarChar, tipoFile)
+        .input('FileUID', sql.NVarChar, fileUID)
+        .input('NomeFile', sql.NVarChar, nomeFile)
+        .input('Payload', sql.NVarChar, '-')
+        .query(`INSERT INTO dbo.tbFileOrdine (IDOrdine, TipoFile, FileUID, NomeFile, Payload) VALUES (@IDOrdine, @TipoFile, @FileUID, @NomeFile, @Payload)`);
+    }
+
+    // 6. Scala plafond in tbTransazioni se serve
+    if (plafondCost && plafondCost < 0) {
+      await request
+        .input('Descrizione', sql.NVarChar, `ORDINE ${idOrdine}`)
+        .input('idDealer', sql.Int, idDealer)
+        .input('Crediti', sql.Int, plafondCost)
+        .input('DataOra', sql.DateTime, now)
+        .input('idAgente', sql.Int, idAgente)
+        .input('Fonte', sql.NVarChar, 'OFF')
+        .input('Payload', sql.NVarChar, null)
+        .input('Note', sql.NVarChar, null)
+        .input('Riferimento', sql.Int, idOrdine)
+        .query(`INSERT INTO dbo.tbTransazioni (Descrizione, idDealer, Crediti, DataOra, idAgente, Fonte, Payload, Note, Riferimento)
+                VALUES (@Descrizione, @idDealer, @Crediti, @DataOra, @idAgente, @Fonte, @Payload, @Note, @Riferimento)`);
+    }
+
+    await transaction.commit();
+    return res.json({ success: true, idOrdine });
+  } catch (err) {
+    if (transaction._aborted !== true) {
+      await transaction.rollback();
+    }
+    console.error('[ATTIVAZIONE][ERRORE]', err);
+    res.status(500).json({ error: 'Errore durante l\'inserimento ordine', details: err.message });
+  } finally {
+    // Chiudi la transazione
+  }
+});
+
+// Endpoint spostati nei rispettivi moduli:
+// - Endpoint agenti -> /api/agente/
+// - Endpoint dealer -> /api/dealer/
+// - /api/statistiche-agente -> /api/agente/statistiche
+
+// --- API: DOCUMENTAZIONE ---
+// GET /api/documentazione
+app.get('/api/documentazione', authenticateToken, async (req, res) => {
+  try {
+    
+    const query = 'SELECT IDFile, Operatore, Titolo, Link FROM dbo.tbFiles ORDER BY Operatore, Titolo';
+    const result = await sql.query(query);
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('/api/documentazione error:', err);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  }
+});
+
+// --- ECOMMERCE: API PRODOTTI ---
+// GET /api/prodotti?segmento=SIM&idOperatore=11
+app.get('/api/prodotti', authenticateToken, async (req, res) => {
+  try {
+    // L'autenticazione JWT è già gestita dal middleware authenticateToken
+    const { segmento, idOperatore } = req.query;
+    if (!segmento || !idOperatore) {
+      return res.status(400).json({ error: 'Parametro segmento e idOperatore obbligatori' });
+    }
+
+    // Mappa FIN -> CELL per la ricerca DB
+    let segmentoDb = segmento;
+    if (segmento === 'FIN') segmentoDb = 'CELL';
+
+    
+    const request = new sql.Request();
+    request.input('segmento', sql.NVarChar, segmentoDb);
+    request.input('idOperatore', sql.Int, parseInt(idOperatore, 10));
+
+    const query = `
+      SELECT
+        IDOfferta AS id,
+        Titolo AS nome,
+        DescrizioneBreve AS descrizione,
+        Crediti AS prezzo,
+        LogoLink,
+        Segmento AS segmento,
+        idOperatore,
+        LimiteSIM AS disponibilita,
+        Tipo AS categoria,
+        ISNULL(SpeseSpedizione, 0) AS SpeseSpedizione
+      FROM dbo.tbOfferte
+      WHERE tipoOfferta = 4
+        AND Segmento = @segmento
+        AND idOperatore = @idOperatore
+        AND (OnlyFor IS NULL OR OnlyFor = '')
+        AND ISNULL(Offerta_Inviata, 1) = 1
+        AND ISNULL(ValidaDal, GETDATE()) <= GETDATE()
+        AND ISNULL(ValidaAl, GETDATE()) >= GETDATE()
+    `;
+    const result = await request.query(query);
+    res.json({ attivazioni: result.recordset });
+  } catch (err) {
+    console.error('/api/prodotti error:', err);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  }
+});
+
+// --- API: TEMPLATE DINAMICO OFFERTA ---
+// GET /api/template-offerta/:idOfferta
+app.get('/api/template-offerta/:idOfferta', authenticateToken, async (req, res) => {
+  try {
+    // Autenticazione JWT
+    const authHeader = req.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Token mancante' });
+    }
+    const token = authHeader.substring(7);
+    try {
+      jwt.verify(token, 'TUO_JWT_SECRET');
+    } catch (err) {
+      return res.status(401).json({ error: 'Token non valido' });
+    }
+    const idOfferta = req.params.idOfferta;
+    if (!idOfferta) return res.status(400).json({ error: 'idOfferta obbligatorio' });
+    
+    const request = new sql.Request();
+    request.input('id', sql.Int, parseInt(idOfferta, 10));
+    const query = 'SELECT TemplateDatiOfferta FROM dbo.tbOfferte WHERE IDOfferta = @id';
+    const result = await request.query(query);
+    if (!result.recordset.length || !result.recordset[0].TemplateDatiOfferta) {
+      return res.status(404).json({ error: 'Nome template non trovato per questa offerta' });
+    }
+    const nomeTemplate = result.recordset[0].TemplateDatiOfferta;
+
+    let templatesData;
+    try {
+      templatesData = fs.readFileSync(__dirname + '/templates.json', 'utf-8');
+    } catch (err) {
+      return res.status(500).json({ error: 'Impossibile leggere templates.json', details: err.message });
+    }
+    let templatesArr;
+    try {
+      templatesArr = JSON.parse(templatesData);
+    } catch (err) {
+      return res.status(500).json({ error: 'templates.json non valido', details: err.message });
+    }
+    const template = templatesArr.find(t => t.template === nomeTemplate);
+    if (!template) {
+      return res.status(404).json({ error: 'Template non trovato in templates.json' });
+    }
+    res.json(template);
+  } catch (err) {
+    console.error('/api/template-offerta error:', err);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  }
+});
+
+// Endpoint chat semplice per bot
+app.post('/webchat', express.json(), async (req, res) => {
+  const { text, user_id } = req.body;
+  // Qui puoi collegare la tua logica bot, per ora rispondiamo con un echo
+  let reply = `Hai scritto: ${text}`;
+  // Esempio: if(text.match(/ciao/i)) reply = 'Ciao! Come posso aiutarti?';
+  res.json({ reply });
+});
+
+// Endpoint per salvare la cronologia chat
+app.post('/webchat/history', express.json(), async (req, res) => {
+  const { user_id, history } = req.body;
+  if (!user_id || !Array.isArray(history)) return res.status(400).json({ error: 'Dati mancanti' });
+  try {
+    
+    // Upsert: aggiorna se esiste, altrimenti inserisci
+    const check = await sql.query`SELECT COUNT(*) as cnt FROM tbChatHistory WHERE UserId = ${user_id}`;
+    if (check.recordset[0].cnt > 0) {
+      await sql.query`UPDATE tbChatHistory SET History = ${JSON.stringify(history)} WHERE UserId = ${user_id}`;
+    } else {
+      await sql.query`INSERT INTO tbChatHistory (UserId, History) VALUES (${user_id}, ${JSON.stringify(history)})`;
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Errore salvataggio cronologia', details: e.message });
+  }
+});
+
+// Endpoint per recuperare la cronologia chat
+app.get('/webchat/history', async (req, res) => {
+  const user_id = req.query.user_id;
+  if (!user_id) return res.status(400).json({ error: 'user_id mancante' });
+  try {
+    
+    const result = await sql.query`SELECT TOP 1 History FROM tbChatHistory WHERE UserId = ${user_id}`;
+    if (result.recordset.length) {
+      res.json({ history: JSON.parse(result.recordset[0].History) });
+    } else {
+      res.json({ history: [] });
+    }
+  } catch (e) {
+    res.status(500).json({ error: 'Errore recupero cronologia', details: e.message });
+  }
+});
+
+// Endpoint proxy per gestire le richieste CORS
+app.post('/api/proxy/chat', express.json(), async (req, res) => {
+  try {
+    // Estrai il token JWT dall'header Authorization
+    const authHeader = req.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Token mancante' });
+    }
+    
+    // Dati utente già disponibili grazie al middleware authenticateToken
+    const userId = req.user.phoneNumber || 'web_user';
+    const { text } = req.body; 
+    
+    if (!text) {
+      return res.status(400).json({ error: 'Testo del messaggio mancante' });
+    }
+    
+    console.log(`Inoltro messaggio al bot da ${userId}:`, text);
+    
+    const response = await axios.post('https://bot.kimweb.agency/from-site', {
+      text,
+      user_id: userId
+    });
+    
+    res.json(response.data);
+  } catch (error) {
+    console.error('Errore nella comunicazione con il bot:', error.message);
+    res.status(500).json({
+      reply: 'Al momento non riesco a contattare il servizio di assistenza. Riprova tra qualche minuto.'
+    });
+  }
+});
+
+app.get('/api/credito-plafond', authenticateToken, async (req, res) => {
+  console.log('--- /api/credito-plafond chiamato ---');
+  try {
+    const idDealer = req.user.dealerId;
+    if (!idDealer) {
+      console.error('ID dealer non trovato nel token JWT (req.user)');
+      return res.status(401).json({ error: 'ID dealer non valido nel token' });
+    }
+    console.log('IDDealer da req.user:', idDealer);
+    
+    try {
+      // La connessione al database è gestita dal middleware globale
+      const request = new sql.Request();
+      // Query per il credito
+      request.input('idDealer', sql.Int, idDealer);
+      const creditoQuery = `
+        SELECT ISNULL(SUM(t.crediti), 0) AS credito
+        FROM dbo.tbtransazioni t
+        JOIN dbo.tbdealers d ON t.iddealer = d.iddealer
+        WHERE d.iddealer = @idDealer
+      `;
+      
+      console.log('Eseguo creditoQuery:', creditoQuery, 'con idDealer:', idDealer);
+      const creditoRes = await request.query(creditoQuery);
+      console.log('Risultato creditoRes:', JSON.stringify(creditoRes.recordset, null, 2));
+      
+      const credito = creditoRes.recordset[0].credito || 0;
+      console.log('Credito calcolato:', credito);
+      // Restituisci il credito in euro (già in euro in tabella)
+      res.json({ credito });
+    } catch (err) {
+      console.error('ERRORE /api/credito-plafond:', err.message, err.stack, err);
+      res.status(500).json({ error: 'Errore server', details: err.message, stack: err.stack });
+    }
+  } catch (err) {
+    console.error('ERRORE GRAVE /api/credito-plafond:', err.message, err.stack, err);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  }
+});
+
+// Endpoint per ottenere gli operatori principali (con SKY raggruppato)
+app.get('/api/operatori', authenticateToken, async (req, res) => {
+  try {
+    
+    
+    // Ottieni tutti gli operatori tranne quelli esclusi
+    const result = await sql.query`
+      SELECT IDOperatore as id, Denominazione as nome, 
+             CASE WHEN IDOperatore IN (3, 8, 12, 14) THEN 1 ELSE 0 END as isSky
+      FROM dbo.tbOperatori2 
+      WHERE IDOperatore != 11  -- Escludi solo PRODOTTI
+      ORDER BY isSky DESC, Denominazione`;
+    
+    // Raggruppa gli operatori SKY in un unico oggetto
+    const operatori = [];
+    const skyOperators = [];
+    
+    result.recordset.forEach(op => {
+      if (op.isSky) {
+        skyOperators.push({
+          id: op.id,
+          nome: op.nome
+        });
+      } else {
+        operatori.push({
+          id: op.id,
+          nome: op.nome
+        });
+      }
+    });
+    
+    // Aggiungi l'opzione SKY all'inizio
+    if (skyOperators.length > 0) {
+      operatori.unshift({
+        id: 'SKY',
+        nome: 'SKY',
+        isSkyGroup: true
+      });
+    }
+    
+    res.json(operatori);
+  } catch (err) {
+    console.error('Errore in /api/operatori:', err);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  }
+});
+
+// Endpoint per ottenere i sottotipi SKY
+app.get('/api/sky-tipi', async (req, res) => {
+  // TODO: implementare endpoint reale se necessario
+  res.json([]);
+});
+
+// Endpoint per ottenere le tipologie disponibili per un operatore
+app.get('/api/tipologie', authenticateToken, async (req, res) => {
+  try {
+    const { operatore } = req.query;
+    if (!operatore) {
+      return res.status(400).json({ error: 'Parametro operatore obbligatorio' });
+    }
+    
+
+    // Ricava tutte le tipologie disponibili per quell’operatore dalle offerte attive
+    let result;
+    if (parseInt(operatore) === 6) {
+      // KENA MOBILE: nessun filtro aggiuntivo
+      result = await sql.query`
+        SELECT DISTINCT
+          CASE
+            WHEN o.Segmento = 'RES' THEN 'RESIDENZIALE'
+            WHEN o.Segmento = 'SHP' THEN 'BUSINESS'
+            ELSE o.Segmento
+          END AS tipologia
+        FROM dbo.tbOfferte o
+        WHERE o.idOperatore = 6
+      `;
+    } else {
+      result = await sql.query`
+        SELECT DISTINCT
+          CASE
+            WHEN o.Segmento = 'RES' THEN 'RESIDENZIALE'
+            WHEN o.Segmento = 'SHP' THEN 'BUSINESS'
+            ELSE o.Segmento
+          END AS tipologia
+        FROM dbo.tbOfferte o
+        WHERE o.idOperatore = ${parseInt(operatore)}
+          AND o.Segmento != 'FIN'
+          AND (o.OnlyFor IS NULL OR o.OnlyFor = '')
+          AND ISNULL(o.Offerta_Inviata, 1) = 1
+          AND ISNULL(o.ValidaDal, GETDATE()) <= GETDATE()
+          AND ISNULL(o.ValidaAl, GETDATE()) >= GETDATE()
+      `;
+    }
+    const tipologie = result.recordset.map(r => r.tipologia);
+    res.json(tipologie);
+  } catch (err) {
+    console.error('Errore in /api/tipologie:', err);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  }
+});
+// Endpoint per ottenere le offerte filtrate per operatore e tipologia
+app.get('/api/offerte', authenticateToken, async (req, res) => {
+  try {
+    const { operatore, tipologia, segmento } = req.query;
+    
+    // Se c'è il parametro segmento, usa la logica per i prodotti
+    if (segmento) {
+      return await getProdottiBySegmento(req, res, segmento);
+    }
+    
+    // Altrimenti usa la logica originale per le offerte
+    if (!operatore) {
+      return res.status(400).json({ error: 'Parametro operatore obbligatorio' });
+    }
+
+    
+    let query = '';
+    const operatorId = parseInt(operatore);
+    if (req.query.from === 'attivazioni') {
+      if ([3, 8, 12, 14].includes(operatorId) && tipologia) {
+        // SKY su attivazioni
+        query = `
+          SELECT  
+            o.IDOfferta,
+            op.Denominazione AS NomeOperatore,
+            o.LogoLink,
+            o.Titolo,
+            o.DescrizioneBreve,
+            o.Crediti,
+            o.idOperatore,
+            o.Segmento,
+            o.LogoLink AS LogoOperatore,
+            o.TemplateDatiOfferta,
+            o.LimiteSIM AS disponibilita,
+            o.Tipo AS categoria
+          FROM dbo.tbOfferte o
+          INNER JOIN dbo.tbOperatori2 op ON o.idOperatore = op.IDOperatore
+          WHERE o.idOperatore = ${operatorId}
+            AND o.Segmento = '${tipologia}'
+            AND ISNULL(o.ValidaDal, GETDATE()) <= GETDATE()
+            AND ISNULL(o.ValidaAl, GETDATE()) >= GETDATE()
+            AND op.IDOperatore IS NOT NULL
+          ORDER BY o.Crediti ASC`;
+      } else {
+        // ATTIVAZIONI per altri operatori: mostra solo offerte con Segmento RES o BUS
+        query = `
+          SELECT  
+            o.IDOfferta,
+            op.Denominazione AS NomeOperatore,
+            o.LogoLink,
+            o.Titolo,
+            o.DescrizioneBreve,
+            o.Crediti,
+            o.idOperatore,
+            o.Segmento,
+            o.LogoLink AS LogoOperatore,
+            o.TemplateDatiOfferta,
+            o.LimiteSIM AS disponibilita,
+            o.Tipo AS categoria
+          FROM dbo.tbOfferte o
+          INNER JOIN dbo.tbOperatori2 op ON o.idOperatore = op.IDOperatore
+          WHERE o.idOperatore = ${operatorId}
+            AND (o.Segmento = 'RES' OR o.Segmento = 'BUS')
+            AND ISNULL(o.ValidaDal, GETDATE()) <= GETDATE()
+            AND ISNULL(o.ValidaAl, GETDATE()) >= GETDATE()
+            AND op.IDOperatore IS NOT NULL
+          ORDER BY o.Crediti ASC`;
+      }
+    } else {
+      // Pagina assistenza: solo offerte SOS
+      query = `
+        SELECT  
+          o.IDOfferta,
+          op.Denominazione AS NomeOperatore,
+          o.LogoLink,
+          o.Titolo,
+          o.DescrizioneBreve,
+          o.Crediti,
+          o.idOperatore,
+          o.Segmento,
+          o.LogoLink AS LogoOperatore,
+          o.TemplateDatiOfferta,
+          o.LimiteSIM AS disponibilita,
+          o.Tipo AS categoria
+        FROM dbo.tbOfferte o
+        INNER JOIN dbo.tbOperatori2 op ON o.idOperatore = op.IDOperatore
+        WHERE o.idOperatore = ${operatorId}
+          AND o.Tipo = 'SOS'
+          AND ISNULL(o.ValidaDal, GETDATE()) <= GETDATE()
+          AND ISNULL(o.ValidaAl, GETDATE()) >= GETDATE()
+          AND op.IDOperatore IS NOT NULL
+        ORDER BY o.Crediti ASC`;
+    }
+    console.log('Esecuzione query offerte:', query);
+    const result = await sql.query(query);
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('Errore in /api/offerte:', err);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  }
+});
+
+// Funzione per ottenere i prodotti filtrati per segmento (SIM o TELEFONI)
+async function getProdottiBySegmento(req, res, segmento) {
+  try {
+    
+    
+    // Mappa i segmenti richiesti ai valori nel database
+    let query = '';
+    let params = {};
+    
+    if (segmento === 'SIM') {
+      query = `
+        SELECT
+          o.IDOfferta AS id,
+          o.Titolo AS nome,
+          o.DescrizioneBreve AS descrizione,
+          o.Crediti AS prezzo,
+          o.LogoLink,
+          o.Segmento,
+          o.idOperatore,
+          o.LimiteSIM AS disponibilita,
+          o.Tipo AS categoria,
+          op.Denominazione AS NomeOperatore
+        FROM dbo.tbOfferte o
+        INNER JOIN dbo.tbOperatori2 op ON o.idOperatore = op.IDOperatore
+        WHERE o.tipoOfferta = 4
+          AND o.Segmento = 'SIM'
+          AND (o.OnlyFor IS NULL OR o.OnlyFor = '')
+          AND ISNULL(o.Offerta_Inviata, 1) = 1
+          AND ISNULL(o.ValidaDal, GETDATE()) <= GETDATE()
+          AND ISNULL(o.ValidaAl, GETDATE()) >= GETDATE()
+        ORDER BY o.Titolo`;
+    } else if (segmento === 'FIN') { // TELEFONI
+      query = `
+        SELECT
+          o.IDOfferta AS id,
+          o.Titolo AS nome,
+          o.DescrizioneBreve AS descrizione,
+          o.Crediti AS prezzo,
+          o.LogoLink,
+          o.Segmento,
+          o.idOperatore,
+          o.LimiteSIM AS disponibilita,
+          o.Tipo AS categoria,
+          op.Denominazione AS NomeOperatore
+        FROM dbo.tbOfferte o
+        INNER JOIN dbo.tbOperatori2 op ON o.idOperatore = op.IDOperatore
+        WHERE o.tipoOfferta = 4
+          AND o.Segmento = 'CELL'
+          AND o.idOperatore = 11
+          AND (o.OnlyFor IS NULL OR o.OnlyFor = '')
+          AND ISNULL(o.Offerta_Inviata, 1) = 1
+          AND ISNULL(o.ValidaDal, GETDATE()) <= GETDATE()
+          AND ISNULL(o.ValidaAl, GETDATE()) >= GETDATE()
+        ORDER BY o.Titolo`;
+    } else {
+      return res.status(400).json({ error: 'Segmento non valido' });
+    }
+
+    console.log('Esecuzione query prodotti per segmento:', segmento);
+    const result = await sql.query(query);
+    
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('Errore nel recupero prodotti per segmento:', err);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  } finally {
+  }
+}
+
+app.get('/api/andamento', authenticateToken, async (req, res) => {
+  try {
+    console.log('Richiesta ricevuta su /api/andamento');
+    
+
+    // La connessione al database è gestita dal middleware globale
+    const result = await sql.query`
+      WITH MonthlyData AS (
+        SELECT 
+          FORMAT(ord.DataStato, 'yyyy/MM') AS [ANNO_MESE],
+          d.RagioneSociale AS Point,
+          SUM(CASE WHEN o.IDOPERATORE = 5 THEN 1 ELSE 0 END) AS ILIAD,
+          SUM(CASE WHEN o.IDOPERATORE = 6 THEN 1 ELSE 0 END) AS KENA,
+          SUM(CASE WHEN o.IDOPERATORE = 7 THEN 1 ELSE 0 END) AS [1MOBILE],
+          SUM(CASE WHEN o.IDOPERATORE = 13 THEN 1 ELSE 0 END) AS WEEDOO
+        FROM 
+          dbo.tbOFFERTE o
+          JOIN dbo.tbordini ord ON o.IDOFFERTA = ord.IDOFFERTA
+          JOIN dbo.tbDealers d ON ord.iddealer = d.idDealer
+        WHERE 
+          o.IDOPERATORE IN (4, 5, 6, 7, 13)
+          AND d.idDealer = ${req.user.dealerId}
+          AND ord.Stato = '1'
+        GROUP BY 
+          FORMAT(ord.DataStato, 'yyyy/MM'), d.RagioneSociale
+      ),
+      MonthlyTotals AS (
+        SELECT 
+          FORMAT(ord.DataStato, 'yyyy/MM') AS [ANNO_MESE],
+          'TOTALE ' + UPPER(FORMAT(ord.DataStato, 'MMMM', 'it-IT')) AS Point,
+          SUM(CASE WHEN o.IDOPERATORE = 5 THEN 1 ELSE 0 END) AS ILIAD,
+          SUM(CASE WHEN o.IDOPERATORE = 6 THEN 1 ELSE 0 END) AS KENA,
+          SUM(CASE WHEN o.IDOPERATORE = 7 THEN 1 ELSE 0 END) AS [1MOBILE],
+          SUM(CASE WHEN o.IDOPERATORE = 13 THEN 1 ELSE 0 END) AS WEEDOO
+        FROM 
+          dbo.tbOFFERTE o
+          JOIN dbo.tbordini ord ON o.IDOFFERTA = ord.IDOFFERTA
+          JOIN dbo.tbDealers d ON ord.iddealer = d.idDealer
+        WHERE 
+          o.IDOPERATORE IN (4, 5, 6, 7, 13)
+          AND d.idDealer = ${req.user.dealerId}
+        GROUP BY 
+          FORMAT(ord.DataStato, 'yyyy/MM'), FORMAT(ord.DataStato, 'MMMM', 'it-IT')
+      )
+      SELECT 
+        [ANNO_MESE] AS ANNO_MESE,
+        Point,
+        ISNULL(ILIAD, 0) AS ILIAD,
+        ISNULL(KENA, 0) AS KENA,
+        ISNULL([1MOBILE], 0) AS [1MOBILE],
+        ISNULL(WEEDOO, 0) AS WEEDOO
+      FROM (
+        SELECT 
+          [ANNO_MESE],
+          Point,
+          ILIAD,
+          KENA,
+          [1MOBILE],
+          WEEDOO,
+          0 AS SortOrder
+        FROM MonthlyTotals
+      
+        UNION ALL
+      
+        SELECT 
+          [ANNO_MESE],
+          Point,
+          ILIAD,
+          KENA,
+          [1MOBILE],
+          WEEDOO,
+          1 AS SortOrder
+        FROM MonthlyData
+      ) AS CombinedData
+      ORDER BY 
+        [ANNO_MESE] DESC,
+        SortOrder,
+        CASE WHEN Point LIKE 'TOTALE%' THEN 0 ELSE 1 END,
+        Point`;
+
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('Errore nel recupero dei dati di andamento:', err);
+    res.status(500).json({ error: 'Errore nel recupero dei dati di andamento', details: err.message });
+  }
+});
+
+// --- API: OBIETTIVI ---
+// GET /api/obiettivi
+app.get('/api/obiettivi', authenticateToken, async (req, res) => {
+  let fastwebStats = {}; // Spostato qui per renderlo disponibile in tutto lo scope
+  
+  try {
+    // 1️⃣ Auth e validazione
+    const authHeader = req.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Token mancante' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    // Dati utente già disponibili grazie al middleware authenticateToken
+    const idDealer = parseInt(req.user.dealerId, 10);
+    if (isNaN(idDealer)) {
+      return res.status(401).json({ error: 'ID dealer non valido' });
+    }
+
+    // 2️⃣ Anno / Mese attuale
+    const now = new Date();
+    const anno = now.getFullYear();
+    const mese = now.getMonth() + 1;
+
+    // 3️⃣ Connessione al database
+    
+    
+    // 3️⃣ Leggi tutte le soglie_report
+    const request = new sql.Request();
+    request.input('anno', sql.Int, anno);
+    request.input('mese', sql.Int, mese);
+
+    const soglieRes = await request.query(`
+      SELECT operatore, categoria, segmento, 
+             soglia_1_min, soglia_1_max, 
+             soglia_2_min, soglia_2_max, 
+             soglia_3_min, soglia_3_max, 
+             soglia_4_min, soglia_4_max 
+      FROM soglie_report 
+      WHERE anno = @anno AND mese = @mese`);
+
+    const soglie = soglieRes.recordset;
+
+    // 5️⃣ Funzione helper per calcolare il target e i mancanti
+    const calcolaMancano = (attuale, sogliaRow) => {
+      const soglieOrdered = [
+        sogliaRow.soglia_1_max,
+        sogliaRow.soglia_2_max,
+        sogliaRow.soglia_3_max,
+        sogliaRow.soglia_4_max
+      ].filter(s => s != null);
+      
+      for (const sogliaMax of soglieOrdered) {
+        if (attuale < sogliaMax) {
+          return Math.max(0, sogliaMax - attuale);
+        }
+      }
+      return 0;
+    };
+
+    const getTarget = (attuale, sogliaRow) => {
+      const soglieOrdered = [
+        sogliaRow.soglia_1_max,
+        sogliaRow.soglia_2_max,
+        sogliaRow.soglia_3_max,
+        sogliaRow.soglia_4_max
+      ].filter(x => x != null);
+      
+      for (const sogliaMax of soglieOrdered) {
+        if (attuale < sogliaMax) {
+          return sogliaMax;
+        }
+      }
+      return soglieOrdered[soglieOrdered.length - 1] || 0;
+    };
+
+    // 6️⃣ Carichiamo i dati per ogni operatore
+    
+    // 1. Fastweb TLC
+    try {
+      console.log('Esecuzione query GetOrderStatisticsByDealerByidDealer per idDealer:', idDealer);
+      const fastwebStatsRes = await sql.query`EXEC GetOrderStatisticsByDealerByidDealer @idDealer = ${idDealer}`;
+      fastwebStats = fastwebStatsRes.recordset[0] || {};
+      console.log('Risultati Fastweb TLC:', JSON.stringify(fastwebStats, null, 2));
+      
+      // Log delle soglie trovate per Fastweb TLC
+      const soglieFastweb = soglie.filter(s => s.operatore === 'Fastweb' && s.categoria !== 'ENERGIA');
+      console.log('Soglie trovate per Fastweb TLC:', JSON.stringify(soglieFastweb, null, 2));
+    } catch (error) {
+      console.error('Errore durante l\'esecuzione di GetOrderStatisticsByDealerByidDealer:', error);
+      fastwebStats = {};
+    }
+
+    const mappaCategorieFastweb = {
+      'MOBILE RES': fastwebStats['MOBILI RES'] || 0,
+      'MOBILE SHP': fastwebStats['MOBILI BUS'] || 0,
+      'FISSO RES': fastwebStats['FISSI RES'] || 0,
+      'FISSO SHP': fastwebStats['FISSI BUS'] || 0,
+      'Convergenza RES': fastwebStats['di cui CONV_RES'] || 0,
+      'Convergenza SHP': fastwebStats['di cui CONV_BUS'] || 0
+    };
+
+    const categorieFastweb = soglie
+      .filter(s => s.operatore === 'Fastweb' && s.categoria !== 'ENERGIA')
+      .map(s => {
+        const nomeCategoria = `${s.categoria} ${s.segmento}`.trim();
+        const attuale = mappaCategorieFastweb[nomeCategoria] || 0;
+        const target = getTarget(attuale, s);
+        const mancano = calcolaMancano(attuale, s);
+
+        return { nome: nomeCategoria, attuale, target, mancano };
+      });
+
+    // 2. Fastweb ENERGIA
+    const energiaRes = await sql.query`
+      EXEC ReportContrattiEnergiaPeridDealer @idDealer = ${idDealer}`;
+    const energiaStats = energiaRes.recordset[0] || {};
+
+    const energiaAttualeRES = energiaStats['Segmento RES'] || 0;
+    const energiaAttualeSHP = energiaStats['Segmento BUS'] || 0;
+
+    const categorieEnergia = [];
+
+    const sogliaEnergiaRES = soglie.find(s => s.operatore === 'Fastweb' && s.categoria === 'ENERGIA' && s.segmento === 'RES');
+    if (sogliaEnergiaRES) {
+      categorieEnergia.push({
+        nome: 'Energia RES',
+        attuale: energiaAttualeRES,
+        target: getTarget(energiaAttualeRES, sogliaEnergiaRES),
+        mancano: calcolaMancano(energiaAttualeRES, sogliaEnergiaRES)
+      });
+    }
+
+    const sogliaEnergiaSHP = soglie.find(s => s.operatore === 'Fastweb' && s.categoria === 'ENERGIA' && s.segmento === 'SHP');
+    if (sogliaEnergiaSHP) {
+      categorieEnergia.push({
+        nome: 'Energia SHP',
+        attuale: energiaAttualeSHP,
+        target: getTarget(energiaAttualeSHP, sogliaEnergiaSHP),
+        mancano: calcolaMancano(energiaAttualeSHP, sogliaEnergiaSHP)
+      });
+    }
+
+    // 3. Sky Mobile & WIFI
+    const skyMobileWifiRes = await sql.query`
+      EXEC ReportAttivazioniSkyMobileWifibyIddealer @idDealer = ${idDealer}`;
+    const skyMobileWifiStats = skyMobileWifiRes.recordset[0] || {};
+    
+    // Debug: Log the structure of the returned data
+    console.log('Sky Mobile & WIFI Stats Raw:', JSON.stringify(skyMobileWifiStats, null, 2));
+
+    // Mappa per le categorie Sky Mobile & WIFI
+    const mappaSkyMobileWifi = {
+      'Mobile': skyMobileWifiStats.Mobile || 0,
+      'WIFI': skyMobileWifiStats.WIFI || 0,
+      'Mobile + WIFI': skyMobileWifiStats['Mobile + WIFI'] || 0
+    };
+
+    const categorieSkyMobileWifi = Object.keys(mappaSkyMobileWifi).map(cat => {
+      const attuale = mappaSkyMobileWifi[cat];
+      const sogliaRow = soglie.find(s => s.operatore === 'Sky Mobile & WIFI' && s.categoria === cat);
+      const target = sogliaRow ? getTarget(attuale, sogliaRow) : 0;
+      const mancano = sogliaRow ? calcolaMancano(attuale, sogliaRow) : 0;
+
+      return { nome: cat, attuale, target, mancano };
+    });
+
+    // 4. Sky TV
+    const skyTvRes = await sql.query`
+      EXEC ReportAttivazioniSkyTV @idDealer = ${idDealer}`;
+    const skyTvStats = skyTvRes.recordset[0] || {};
+
+    const mappaSkyTv = {
+      'ONLY TV': skyTvStats['ONLY TV'] || 0,
+      '3P': skyTvStats['3P'] || 0,
+      'GLASS': skyTvStats['GLASS'] || 0,
+      '3P GLASS': skyTvStats['3P GLASS'] || 0
+    };
+
+    const categorieSkyTv = Object.keys(mappaSkyTv).map(cat => {
+      const attuale = mappaSkyTv[cat];
+      const sogliaRow = soglie.find(s => s.operatore === 'Sky TV' && s.categoria === cat);
+      const target = sogliaRow ? getTarget(attuale, sogliaRow) : 0;
+      const mancano = sogliaRow ? calcolaMancano(attuale, sogliaRow) : 0;
+
+      return { nome: cat, attuale, target, mancano };
+    });
+
+    // 7️⃣ Prepara la risposta finale
+    const risposta = {
+      obiettivi: [
+        { operatore: 'Fastweb TLC', categorie: categorieFastweb },
+        { operatore: 'Fastweb ENERGIA', categorie: categorieEnergia },
+        { operatore: 'Sky Mobile & WIFI', categorie: categorieSkyMobileWifi },
+        { operatore: 'Sky TV', categorie: categorieSkyTv }
+      ]
+    };
+
+
+    res.json(risposta);
+  } catch (err) {
+    console.error('Errore in /api/obiettivi:', err);
+    res.status(500).json({ error: 'Errore nel recupero degli obiettivi', details: err.message });
+  }
+});
+
+// Esportazioni ES modules
+export {
+  authenticateToken,
+  dbConfig,
+  app
+};
+
+// Esportazione predefinita per compatibilità
+export default {
+  authenticateToken,
+  dbConfig,
+  app
+};

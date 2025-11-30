@@ -1,0 +1,711 @@
+// Modulo dedicato alle API per i dealer
+import express from 'express';
+import sql from 'mssql';
+
+// Factory function per creare il router con le dipendenze iniettate
+const createDealerRouter = ({ authenticateToken, dbConfig }) => {
+  const router = express.Router();
+
+  // Middleware per verificare che l'utente sia un dealer
+  function requireDealer(req, res, next) {
+    console.log('[DEBUG][requireDealer] req.user:', req.user);
+    
+    if (!req.user || !req.user.ruoli) {
+      console.log('[DEBUG][requireDealer] BLOCCATO: utente o ruoli mancanti');
+      return res.status(403).json({ 
+        error: 'Accesso non autorizzato',
+        details: 'Utente o ruoli mancanti',
+        user: req.user // Incluso per debug
+      });
+    }
+
+    // Converti i ruoli in maiuscolo per il confronto case-insensitive
+    const ruoliUtente = Array.isArray(req.user.ruoli) 
+      ? req.user.ruoli.map(r => r.toString().toUpperCase())
+      : [req.user.ruoli.toString().toUpperCase()];
+    
+    console.log('[DEBUG][requireDealer] Ruoli utente:', ruoliUtente);
+    
+    if (!ruoliUtente.includes('DEALER')) {
+      console.log('[DEBUG][requireDealer] BLOCCATO: ruolo Dealer non trovato');
+      return res.status(403).json({ 
+        error: 'Accesso riservato ai dealer',
+        details: `Ruolo Dealer non trovato. Ruoli presenti: ${ruoliUtente.join(', ')}`
+      });
+    }
+    
+    next();
+  }
+
+  // === Dettaglio ordine/attivazione per DEALER ===
+  router.get('/attivazione/:id', authenticateToken, requireDealer, async (req, res) => {
+    const id = req.params.id;
+    const dealerId = req.user.dealerId;
+    try {
+      await sql.connect(dbConfig);
+      // Recupera ordine solo se appartiene al dealer
+      const result = await new sql.Request()
+        .input('id', sql.Int, id)
+        .input('dealerId', sql.Int, dealerId)
+        .query(`
+          SELECT o.*, d.RagioneSociale AS Dealer, s.StatoEsteso, ofer.Titolo AS Offerta,
+            CONVERT(varchar, o.DataOra, 104) AS DataOrdine,
+            ofer.Crediti, ofer.Segmento, ofer.Tipo
+          FROM dbo.tbOrdini o
+          LEFT JOIN dbo.tbDealers d ON o.idDealer = d.IDDealer
+          LEFT JOIN dbo.tbStatiOrdini s ON o.Stato = s.IDStato
+          LEFT JOIN dbo.tbOfferte ofer ON o.idOfferta = ofer.IDOfferta
+          WHERE o.IDOrdine = @id AND o.idDealer = @dealerId
+        `);
+      
+      if (!result.recordset || result.recordset.length === 0) {
+        return res.status(404).json({ error: 'Ordine non trovato' });
+      }
+      
+      const ordine = result.recordset[0];
+      
+      // Documenti
+      let documenti = [];
+      try {
+        const docs = await new sql.Request()
+          .input('id', sql.Int, id)
+          .query(`SELECT NomeOriginale AS nome, FileUrl AS url FROM dbo.tbDocumenti WHERE IDOrdine = @id`);
+        documenti = docs.recordset || [];
+      } catch (e) {
+        documenti = [];
+      }
+      ordine.Documenti = documenti;
+      
+      // Storico cambi stato
+      let storico = [];
+      try {
+        const storicoRes = await new sql.Request()
+          .input('id', sql.Int, id)
+          .query(`
+            SELECT DataOra, Utente, StatoPrecedente, StatoNuovo, Nota
+            FROM dbo.tbStoricoOrdini WHERE IDOrdine = @id
+            ORDER BY DataOra DESC
+          `);
+        storico = storicoRes.recordset || [];
+      } catch (e) {
+        storico = [];
+      }
+      ordine.Storico = storico;
+      
+      // Payload da tbDatiOrdine
+      let payload = {};
+      try {
+        const dati = await new sql.Request()
+          .input('id', sql.Int, id)
+          .query(`SELECT TOP 1 Payload FROM dbo.tbDatiOrdine WHERE IDOrdine = @id`);
+        payload = dati.recordset[0]?.Payload ? JSON.parse(dati.recordset[0].Payload) : {};
+      } catch (e) {
+        payload = {};
+      }
+      ordine.Payload = payload;
+      
+      // Payload intestatario
+      let payloadInt = {};
+      try {
+        const datiInt = await new sql.Request()
+          .input('id', sql.Int, id)
+          .query(`SELECT TOP 1 Payload FROM dbo.tbDatiIntestario WHERE IDOrdine = @id`);
+        payloadInt = datiInt.recordset[0]?.Payload ? JSON.parse(datiInt.recordset[0].Payload) : {};
+      } catch (e) {
+        payloadInt = {};
+      }
+      ordine.PayloadIntestario = payloadInt;
+      
+      // File ordine
+      let fileOrdine = [];
+      try {
+        const files = await new sql.Request()
+          .input('id', sql.Int, id)
+          .query(`SELECT * FROM dbo.tbFileOrdine WHERE IDOrdine = @id`);
+        fileOrdine = files.recordset || [];
+      } catch (e) {
+        fileOrdine = [];
+      }
+      ordine.FileOrdine = fileOrdine;
+      
+      res.json(ordine);
+    } catch (err) {
+      console.error('[DEALER][DETTAGLIO ORDINE] Errore:', err);
+      res.status(500).json({ error: 'Errore server' });
+    }
+  });
+
+  // Endpoint per le ultime attivazioni del dealer
+  router.get('/ultime-attivazioni', authenticateToken, requireDealer, async (req, res) => {
+    console.log('[DEBUG][GET /api/dealer/ultime-attivazioni] URL:', req.originalUrl, '| Query:', req.query);
+    console.log('[DEBUG] Dettagli utente:', {
+      user: req.user,
+      roles: req.user?.ruoli,
+      dealerId: req.user?.dealerId
+    });
+    
+    try {
+      const dealerId = req.user.dealerId || req.user.idDealer || req.user.id;
+      if (!dealerId) {
+        console.error('[ERROR] ID dealer mancante nel token. Dettagli utente:', req.user);
+        return res.status(400).json({ 
+          error: 'ID dealer mancante nel token',
+          details: 'Impossibile identificare il dealer associato a questo account',
+          user: req.user // Incluso per debug
+        });
+      }
+
+      await sql.connect(dbConfig);
+      const operatore = (req.query.operatore || 'FASTWEB').toUpperCase();
+      console.log(`[DEBUG] Operatore selezionato: ${operatore}`);
+      
+      // Gestione separata per ogni operatore
+      if (operatore === 'FASTWEB') {
+        // Logica specifica per FASTWEB
+        try {
+          console.log('[FASTWEB] Esecuzione query per dealerId:', dealerId);
+          
+          // Verifica esistenza dealer e codici COMSY
+          const checkDealerQuery = `
+            SELECT IDDealer, COMSY1, COMSY2 
+            FROM dbo.tbDealers 
+            WHERE IDDealer = @idDealer`;
+          // Prima query: checkDealerQuery
+          const checkDealerRequest = new sql.Request();
+          checkDealerRequest.input('idDealer', sql.Int, dealerId);
+          const dealerResult = await checkDealerRequest.query(checkDealerQuery);
+          
+          if (!dealerResult.recordset?.length) {
+            console.error('[FASTWEB] Dealer non trovato con ID:', dealerId);
+            return res.json({ success: true, data: [] });
+          }
+          
+          const dealer = dealerResult.recordset[0];
+          
+          // Query specifica per FASTWEB
+          const query = `
+            -- Codici comsy per il dealer selezionato
+            WITH CodiciDealer AS (
+                SELECT COMSY1, COMSY2
+                FROM dbo.tbDealers
+                WHERE IDDealer = @idDealer
+            ),
+            -- Parsing batch e calcolo anno-mese
+            BatchPerMese AS (
+                SELECT 
+                    CAST([Batch] AS datetime) AS DataBatch,
+                    FORMAT(CAST([Batch] AS datetime), 'yyyy-MM') AS MeseRiferimento
+                FROM dbo.InseritoFW
+            ),
+            -- Prendiamo l'ultimo batch per ogni mese
+            UltimiBatchMensili AS (
+                SELECT 
+                    MeseRiferimento,
+                    MAX(DataBatch) AS UltimoBatchMese
+                FROM BatchPerMese
+                GROUP BY MeseRiferimento
+            ),
+            -- Tutte le righe della tabella per gli ultimi batch mensili
+            AttivazioniUltimiBatchMensili AS (
+                SELECT I.*
+                FROM dbo.InseritoFW I
+                INNER JOIN UltimiBatchMensili U
+                    ON CAST(I.[Batch] AS datetime) = U.UltimoBatchMese
+            )
+            -- Output finale con filtro dealer
+            SELECT DISTINCT
+                FORMAT(CAST(AF.[Batch] AS datetime), 'dd.MM.yyyy') AS [Batch],
+                AF.[Cliente],
+                AF.[Valore],
+                AF.[Segmento],
+                AF.[Tipo Ordine]
+            FROM AttivazioniUltimiBatchMensili AF
+            JOIN CodiciDealer D
+                ON AF.[Codice Comsy Tecnico Attuale] IN (D.COMSY1, D.COMSY2)`;
+
+          // Seconda query: attivazioni
+          const attivazioniRequest = new sql.Request();
+          attivazioniRequest.input('idDealer', sql.Int, dealerId);
+          attivazioniRequest.input('comsy1', sql.VarChar, dealer.COMSY1 || '');
+          attivazioniRequest.input('comsy2', sql.VarChar, dealer.COMSY2 || '');
+
+          const result = await attivazioniRequest.query(query);
+          const mapped = (result.recordset || []).map(row => ({
+            Data: row.Batch,
+            Cliente: row.Cliente,
+            Titolo: row.Valore,
+            Segmento: row.Segmento,
+            'Tipo Ordine': row['Tipo Ordine']
+          }));
+          return res.json({ success: true, data: mapped });
+
+        } catch (err) {
+          console.error('[FASTWEB] Errore query:', err);
+          return res.json({ success: true, data: [] });
+        }
+        
+      } else if (operatore === 'FASTWEB ENERGIA') {
+        // Logica specifica per FASTWEB ENERGIA
+        try {
+          console.log('[FASTWEB ENERGIA] Esecuzione query per dealerId:', dealerId);
+          
+          // Verifica esistenza dealer e codici COMSY
+          const checkDealerRequest = new sql.Request();
+          checkDealerRequest.input('idDealer', sql.Int, dealerId);
+          const dealerResult = await checkDealerRequest.query(checkDealerQuery);
+          
+          if (!dealerResult.recordset?.length) {
+            console.error('[FASTWEB ENERGIA] Dealer non trovato con ID:', dealerId);
+            return res.json({ success: true, data: [] });
+          }
+          
+          const dealer = dealerResult.recordset[0];
+          
+          // Query specifica per FASTWEB ENERGIA
+          const query = `
+            -- Codici comsy per il dealer selezionato
+            WITH CodiciDealer AS (
+                SELECT COMSY1, COMSY2
+                FROM dbo.tbDealers
+                WHERE IDDealer = @idDealer
+            ),
+            -- Parsing batch e calcolo anno-mese
+            BatchPerMese AS (
+                SELECT 
+                    CAST([Batch] AS datetime) AS DataBatch,
+                    FORMAT(CAST([Batch] AS datetime), 'yyyy-MM') AS MeseRiferimento
+                FROM dbo.FWEnergiaImporter
+            ),
+            -- Ultimo batch per ciascun mese
+            UltimiBatchMensili AS (
+                SELECT 
+                    MeseRiferimento,
+                    MAX(DataBatch) AS UltimoBatchMese
+                FROM BatchPerMese
+                GROUP BY MeseRiferimento
+            ),
+            -- Righe della tabella per gli ultimi batch mensili
+            AttivazioniUltimiBatchMensili AS (
+                SELECT E.*
+                FROM dbo.FWEnergiaImporter E
+                INNER JOIN UltimiBatchMensili U
+                    ON CAST(E.[Batch] AS datetime) = U.UltimoBatchMese
+            )
+            -- Output finale con filtro dealer
+            SELECT DISTINCT
+                FORMAT(CAST(EF.[Batch] AS datetime), 'dd.MM.yyyy') AS [Batch],
+                EF.[Codice Contratto] AS [Cliente],
+                EF.[Nome Offerta Vendita] AS [Valore],
+                EF.[Segmento],
+                EF.[Tipo Cliente] AS [Tipo Ordine]
+            FROM AttivazioniUltimiBatchMensili EF
+            JOIN CodiciDealer D
+                ON EF.[Codice Comsy/Order Owner (Report!DBSELLER)] IN (D.COMSY1, D.COMSY2)`;
+          
+          // Seconda query: attivazioni
+          console.log('[DEBUG][FASTWEB ENERGIA] dealerId usato per attivazioni:', dealerId);
+          console.log('[DEBUG][FASTWEB ENERGIA] Query attivazioni:', query);
+          const attivazioniRequest = new sql.Request();
+          attivazioniRequest.input('idDealer', sql.Int, dealerId);
+          
+          const result = await attivazioniRequest.query(query);
+          const mapped = (result.recordset || []).map(row => ({
+            Data: row.Batch,
+            Cliente: row.Cliente,
+            Titolo: row.Valore,
+            Segmento: row.Segmento,
+            'Tipo Ordine': row['Tipo Ordine']
+          }));
+          return res.json({ success: true, data: mapped });
+
+        } catch (err) {
+          console.error('[FASTWEB ENERGIA] Errore query:', err);
+          return res.json({ success: true, data: [] });
+        }
+
+            console.log('[DEBUG] Costruzione query per FASTWEB');
+            query = `
+            -- Codici comsy per il dealer selezionato
+            WITH CodiciDealer AS (
+                SELECT COMSY1, COMSY2
+                FROM dbo.tbDealers
+                WHERE IDDealer = @idDealer
+            ),
+
+            -- Parsing batch e calcolo anno-mese
+            BatchPerMese AS (
+                SELECT 
+                    CAST([Batch] AS datetime) AS DataBatch,
+                    FORMAT(CAST([Batch] AS datetime), 'yyyy-MM') AS MeseRiferimento
+                FROM dbo.InseritoFW
+                WHERE TRY_CAST([Batch] AS datetime) IS NOT NULL
+            ),
+
+            -- Prendiamo l'ultimo batch per ogni mese
+            UltimiBatchMensili AS (
+                SELECT 
+                    MeseRiferimento,
+                    MAX(DataBatch) AS UltimoBatchMese
+                FROM BatchPerMese
+                GROUP BY MeseRiferimento
+            ),
+
+            -- Tutte le righe della tabella per gli ultimi batch mensili
+            AttivazioniUltimiBatchMensili AS (
+                SELECT I.*, CAST(I.[Batch] AS datetime) AS BatchDate
+                FROM dbo.InseritoFW I
+                INNER JOIN UltimiBatchMensili U
+                    ON CAST(I.[Batch] AS datetime) = U.UltimoBatchMese
+            )
+
+            -- Output finale con filtro dealer
+            SELECT TOP 5
+                FORMAT(AF.BatchDate, 'dd.MM.yyyy') AS Data,
+                'FASTWEB' AS Titolo,
+                ISNULL(AF.[Tipo Ordine], 'N/D') AS Tipo,
+                ISNULL(AF.[Segmento], 'N/D') AS Segmento,
+                'Completato' AS Stato
+            FROM AttivazioniUltimiBatchMensili AF
+            JOIN CodiciDealer D
+                ON AF.[Codice Comsy Tecnico Attuale] IN (D.COMSY1, D.COMSY2)
+            WHERE AF.[Codice Comsy Tecnico Attuale] IS NOT NULL
+            ORDER BY AF.BatchDate DESC;`;
+          } else if (operatore === 'FASTWEB ENERGIA') {
+            console.log('[DEBUG] Costruzione query per FASTWEB ENERGIA');
+            query = `
+            -- Codici comsy per il dealer selezionato
+            WITH CodiciDealer AS (
+                SELECT COMSY1, COMSY2
+                FROM dbo.tbDealers
+                WHERE IDDealer = @idDealer
+            ),
+
+            -- Parsing batch e calcolo anno-mese
+            BatchPerMese AS (
+                SELECT 
+                    CAST([Batch] AS datetime) AS DataBatch,
+                    FORMAT(CAST([Batch] AS datetime), 'yyyy-MM') AS MeseRiferimento
+                FROM dbo.FWEnergiaImporter
+                WHERE TRY_CAST([Batch] AS datetime) IS NOT NULL
+            ),
+
+            -- Prendiamo l'ultimo batch per ogni mese
+            UltimiBatchMensili AS (
+                SELECT 
+                    MeseRiferimento,
+                    MAX(DataBatch) AS UltimoBatchMese
+                FROM BatchPerMese
+                GROUP BY MeseRiferimento
+            ),
+
+            -- Tutte le righe della tabella per gli ultimi batch mensili
+            AttivazioniUltimiBatchMensili AS (
+                SELECT E.*, CAST(E.[Batch] AS datetime) AS BatchDate
+                FROM dbo.FWEnergiaImporter E
+                INNER JOIN UltimiBatchMensili U
+                    ON CAST(E.[Batch] AS datetime) = U.UltimoBatchMese
+            )
+
+            -- Output finale con filtro dealer
+            SELECT TOP 5
+                FORMAT(AF.BatchDate, 'dd.MM.yyyy') AS Data,
+                'FASTWEB ENERGIA' AS Titolo,
+                ISNULL(AF.[Tipo Cliente], 'N/D') AS Tipo,
+                ISNULL(AF.[Segmento], 'N/D') AS Segmento,
+                'Completato' AS Stato
+            FROM AttivazioniUltimiBatchMensili AF
+            JOIN CodiciDealer D
+                ON AF.[Codice Comsy/Order Owner (Report!DBSELLER)] IN (D.COMSY1, D.COMSY2)
+            WHERE AF.[Codice Comsy/Order Owner (Report!DBSELLER)] IS NOT NULL
+            ORDER BY AF.BatchDate DESC;`;
+    }
+    await sql.connect(dbConfig);
+    const request = new sql.Request();
+    request.input('idDealer', sql.Int, dealerId);
+    const query = `
+      SELECT TOP 5
+        CONVERT(VARCHAR(10), o.DataOra, 120) AS Data,
+        offr.Titolo AS Prodotto,
+        offr.Tipo AS Tipo,
+        o.TotaleOrdine AS Importo,
+        so.StatoEsteso AS Stato
+      FROM [KIM_STAGING].[dbo].[tbOrdiniProdotti] o
+      LEFT JOIN [KIM_STAGING].[dbo].[tbStatiOrdiniProdotti] so ON o.idStatoOrdineProdotto = so.IDStato
+      LEFT JOIN [KIM_STAGING].[dbo].[tbDettagliOrdiniProdotti] dop ON o.IDOrdineProdotto = dop.idOrdineProdotto
+      LEFT JOIN [KIM_STAGING].[dbo].[tbOfferte] offr ON dop.idOfferta = offr.IDOfferta
+      WHERE o.idDealer = @idDealer
+      ORDER BY o.DataOra DESC`;
+    const result = await request.query(query);
+    res.json({ success: true, data: result.recordset || [] });
+  } catch (err) {
+    console.error('[DEALER][ultime-attivazioni] Errore:', err);
+    res.status(500).json({ success: false, error: 'Errore del server', details: err.message });
+  }
+});
+
+// Endpoint per gli ultimi 5 ordini del dealer
+router.get('/ultimi-ordini', authenticateToken, requireDealer, async (req, res) => {
+  try {
+    const dealerId = req.user.dealerId;
+    if (!dealerId) {
+      return res.status(400).json({ success: false, error: 'ID dealer mancante nel token' });
+    }
+    await sql.connect(dbConfig);
+    const request = new sql.Request();
+    request.input('idDealer', sql.Int, dealerId);
+    const query = `
+      SELECT TOP 5
+        CONVERT(VARCHAR(10), o.DataOra, 120) AS Data,
+        offr.Titolo AS Prodotto,
+        offr.Tipo AS Tipo,
+        o.TotaleOrdine AS Importo,
+        so.StatoEsteso AS Stato
+      FROM [KIM_STAGING].[dbo].[tbOrdiniProdotti] o
+      LEFT JOIN [KIM_STAGING].[dbo].[tbStatiOrdiniProdotti] so ON o.idStatoOrdineProdotto = so.IDStato
+      LEFT JOIN [KIM_STAGING].[dbo].[tbDettagliOrdiniProdotti] dop ON o.IDOrdineProdotto = dop.idOrdineProdotto
+      LEFT JOIN [KIM_STAGING].[dbo].[tbOfferte] offr ON dop.idOfferta = offr.IDOfferta
+      WHERE o.idDealer = @idDealer
+      ORDER BY o.DataOra DESC`;
+    const result = await request.query(query);
+    res.json({ success: true, data: result.recordset || [] });
+  } catch (err) {
+    console.error('[DEALER][ultimi-ordini] Errore:', err);
+    res.status(500).json({ success: false, error: 'Errore del server', details: err.message });
+  }
+});
+
+// Endpoint per gli obiettivi del dealer
+  router.get('/obiettivi', authenticateToken, requireDealer, async (req, res) => {
+    // --- LOGICA COPIATA DA index.mjs /api/obiettivi ---
+    let fastwebStats = {};
+    try {
+      const idDealer = parseInt(req.user.dealerId, 10);
+      if (isNaN(idDealer)) {
+        return res.status(401).json({ error: 'ID dealer non valido' });
+      }
+      const now = new Date();
+      const anno = now.getFullYear();
+      const mese = now.getMonth() + 1;
+      await sql.connect(dbConfig);
+      const request = new sql.Request();
+      request.input('anno', sql.Int, anno);
+      request.input('mese', sql.Int, mese);
+      // Soglie
+      const soglieRes = await request.query(`
+        SELECT operatore, categoria, segmento, 
+               soglia_1_min, soglia_1_max, 
+               soglia_2_min, soglia_2_max, 
+               soglia_3_min, soglia_3_max, 
+               soglia_4_min, soglia_4_max 
+        FROM soglie_report 
+        WHERE anno = @anno AND mese = @mese`);
+      const soglie = soglieRes.recordset;
+      // Helpers
+      const calcolaMancano = (attuale, sogliaRow) => {
+        const soglieOrdered = [
+          sogliaRow.soglia_1_max,
+          sogliaRow.soglia_2_max,
+          sogliaRow.soglia_3_max,
+          sogliaRow.soglia_4_max
+        ].filter(s => s != null);
+        for (const sogliaMax of soglieOrdered) {
+          if (attuale < sogliaMax) {
+            return Math.max(0, sogliaMax - attuale);
+          }
+        }
+        return 0;
+      };
+      const getTarget = (attuale, sogliaRow) => {
+        const soglieOrdered = [
+          sogliaRow.soglia_1_max,
+          sogliaRow.soglia_2_max,
+          sogliaRow.soglia_3_max,
+          sogliaRow.soglia_4_max
+        ].filter(x => x != null);
+        for (const sogliaMax of soglieOrdered) {
+          if (attuale < sogliaMax) {
+            return sogliaMax;
+          }
+        }
+        return soglieOrdered[soglieOrdered.length - 1] || 0;
+      };
+
+    // Fastweb TLC
+    let fastwebStatsRes = await sql.query`EXEC GetOrderStatisticsByDealerByidDealer @idDealer = ${idDealer}`;
+    fastwebStats = fastwebStatsRes.recordset[0] || {};
+    const mappaCategorieFastweb = {
+      'MOBILE RES': fastwebStats['MOBILI RES'] || 0,
+      'MOBILE SHP': fastwebStats['MOBILI BUS'] || 0,
+      'FISSO RES': fastwebStats['FISSI RES'] || 0,
+      'FISSO SHP': fastwebStats['FISSI BUS'] || 0,
+      'Convergenza RES': fastwebStats['di cui CONV_RES'] || 0,
+      'Convergenza SHP': fastwebStats['di cui CONV_BUS'] || 0
+    };
+    const categorieFastweb = soglie
+      .filter(s => s.operatore === 'Fastweb' && s.categoria !== 'ENERGIA')
+      .map(s => {
+        const nomeCategoria = `${s.categoria} ${s.segmento}`.trim();
+        const attuale = mappaCategorieFastweb[nomeCategoria] || 0;
+        const target = getTarget(attuale, s);
+        const mancano = calcolaMancano(attuale, s);
+        return { nome: nomeCategoria, attuale, target, mancano };
+      });
+    // Fastweb ENERGIA
+    let energiaRes = await sql.query`EXEC ReportContrattiEnergiaPeridDealer @idDealer = ${idDealer}`;
+    let energiaStats = energiaRes.recordset[0] || {};
+    let energiaAttualeRES = energiaStats['Segmento RES'] || 0;
+    let energiaAttualeSHP = energiaStats['Segmento BUS'] || 0;
+    let categorieEnergia = [];
+    let sogliaEnergiaRES = soglie.find(s => s.operatore === 'Fastweb' && s.categoria === 'ENERGIA' && s.segmento === 'RES');
+    if (sogliaEnergiaRES) {
+      categorieEnergia.push({
+        nome: 'Energia RES',
+        attuale: energiaAttualeRES,
+        target: getTarget(energiaAttualeRES, sogliaEnergiaRES),
+        mancano: calcolaMancano(energiaAttualeRES, sogliaEnergiaRES)
+      });
+    }
+    let sogliaEnergiaSHP = soglie.find(s => s.operatore === 'Fastweb' && s.categoria === 'ENERGIA' && s.segmento === 'SHP');
+    if (sogliaEnergiaSHP) {
+      categorieEnergia.push({
+        nome: 'Energia SHP',
+        attuale: energiaAttualeSHP,
+        target: getTarget(energiaAttualeSHP, sogliaEnergiaSHP),
+        mancano: calcolaMancano(energiaAttualeSHP, sogliaEnergiaSHP)
+      });
+    }
+    // Sky Mobile & WIFI
+    let skyMobileWifiRes = await sql.query`EXEC ReportAttivazioniSkyMobileWifibyIddealer @idDealer = ${idDealer}`;
+    let skyMobileWifiStats = skyMobileWifiRes.recordset[0] || {};
+    let mappaSkyMobileWifi = {
+      'Mobile': skyMobileWifiStats.Mobile || 0,
+      'WIFI': skyMobileWifiStats.WIFI || 0,
+      'Mobile + WIFI': skyMobileWifiStats['Mobile + WIFI'] || 0
+    };
+    let categorieSkyMobileWifi = Object.keys(mappaSkyMobileWifi).map(cat => {
+      const attuale = mappaSkyMobileWifi[cat];
+      const sogliaRow = soglie.find(s => s.operatore === 'Sky Mobile & WIFI' && s.categoria === cat);
+      const target = sogliaRow ? getTarget(attuale, sogliaRow) : 0;
+      const mancano = sogliaRow ? calcolaMancano(attuale, sogliaRow) : 0;
+      return { nome: cat, attuale, target, mancano };
+    });
+    // Sky TV
+    let skyTvRes = await sql.query`EXEC ReportAttivazioniSkyTV @idDealer = ${idDealer}`;
+    let skyTvStats = skyTvRes.recordset[0] || {};
+    let mappaSkyTv = {
+      'ONLY TV': skyTvStats['ONLY TV'] || 0,
+      '3P': skyTvStats['3P'] || 0,
+      'GLASS': skyTvStats['GLASS'] || 0,
+      '3P GLASS': skyTvStats['3P GLASS'] || 0
+    };
+    let categorieSkyTv = Object.keys(mappaSkyTv).map(cat => {
+      const attuale = mappaSkyTv[cat];
+      const sogliaRow = soglie.find(s => s.operatore === 'Sky TV' && s.categoria === cat);
+      const target = sogliaRow ? getTarget(attuale, sogliaRow) : 0;
+      const mancano = sogliaRow ? calcolaMancano(attuale, sogliaRow) : 0;
+      return { nome: cat, attuale, target, mancano };
+    });
+    // Risposta finale
+    const obiettivi = [
+      { operatore: 'Fastweb TLC', categorie: categorieFastweb },
+      { operatore: 'Fastweb ENERGIA', categorie: categorieEnergia },
+      { operatore: 'Sky Mobile & WIFI', categorie: categorieSkyMobileWifi },
+      { operatore: 'Sky TV', categorie: categorieSkyTv }
+    ];
+    res.json({ success: true, data: obiettivi });
+  } catch (err) {
+    console.error('Errore in /api/dealer/obiettivi:', err);
+    res.status(500).json({ error: 'Errore nel recupero degli obiettivi', details: err.message });
+  }
+});
+
+// === Andamento Mensile SOLO DEALER ===
+router.get('/andamento', requireDealer, async (req, res) => {
+  try {
+    const dealerId = req.user.dealerId;
+    if (!dealerId) {
+      return res.status(400).json({ error: 'dealerId mancante nel token' });
+    }
+    await sql.connect(dbConfig);
+    const result = await sql.query(`
+      WITH MonthlyData AS (
+        SELECT 
+          FORMAT(ord.DataStato, 'yyyy/MM') AS [ANNO_MESE],
+          d.RagioneSociale AS Point,
+          SUM(CASE WHEN o.IDOPERATORE = 5 THEN 1 ELSE 0 END) AS ILIAD,
+          SUM(CASE WHEN o.IDOPERATORE = 6 THEN 1 ELSE 0 END) AS KENA,
+          SUM(CASE WHEN o.IDOPERATORE = 7 THEN 1 ELSE 0 END) AS [1MOBILE],
+          SUM(CASE WHEN o.IDOPERATORE = 13 THEN 1 ELSE 0 END) AS WEEDOO
+        FROM 
+          dbo.tbOFFERTE o
+          JOIN dbo.tbordini ord ON o.IDOFFERTA = ord.IDOFFERTA
+          JOIN dbo.tbDealers d ON ord.iddealer = d.idDealer
+        WHERE 
+          o.IDOPERATORE IN (4, 5, 6, 7, 13)
+          AND d.idDealer = @idDealer
+          AND ord.Stato = '1'
+        GROUP BY 
+          FORMAT(ord.DataStato, 'yyyy/MM'), d.RagioneSociale
+      ),
+      MonthlyTotals AS (
+        SELECT 
+          FORMAT(ord.DataStato, 'yyyy/MM') AS [ANNO_MESE],
+          'TOTALE ' + UPPER(FORMAT(ord.DataStato, 'MMMM', 'it-IT')) AS Point,
+          SUM(CASE WHEN o.IDOPERATORE = 5 THEN 1 ELSE 0 END) AS ILIAD,
+          SUM(CASE WHEN o.IDOPERATORE = 6 THEN 1 ELSE 0 END) AS KENA,
+          SUM(CASE WHEN o.IDOPERATORE = 7 THEN 1 ELSE 0 END) AS [1MOBILE],
+          SUM(CASE WHEN o.IDOPERATORE = 13 THEN 1 ELSE 0 END) AS WEEDOO
+        FROM 
+          dbo.tbOFFERTE o
+          JOIN dbo.tbordini ord ON o.IDOFFERTA = ord.IDOFFERTA
+          JOIN dbo.tbDealers d ON ord.iddealer = d.idDealer
+        WHERE 
+          o.IDOPERATORE IN (4, 5, 6, 7, 13)
+          AND d.idDealer = @idDealer
+        GROUP BY 
+          FORMAT(ord.DataStato, 'yyyy/MM'), FORMAT(ord.DataStato, 'MMMM', 'it-IT')
+      )
+      SELECT 
+        [ANNO_MESE] AS ANNO_MESE,
+        Point,
+        ISNULL(ILIAD, 0) AS ILIAD,
+        ISNULL(KENA, 0) AS KENA,
+        ISNULL([1MOBILE], 0) AS [1MOBILE],
+        ISNULL(WEEDOO, 0) AS WEEDOO
+      FROM (
+        SELECT 
+          [ANNO_MESE],
+          Point,
+          ILIAD,
+          KENA,
+          [1MOBILE],
+          WEEDOO,
+          0 AS SortOrder
+        FROM MonthlyTotals
+      
+        UNION ALL
+      
+        SELECT 
+          [ANNO_MESE],
+          Point,
+          ILIAD,
+          KENA,
+          [1MOBILE],
+          WEEDOO,
+          1 AS SortOrder
+        FROM MonthlyData
+      ) AS CombinedData
+      ORDER BY [ANNO_MESE], SortOrder;
+    `)
+      .input('idDealer', sql.Int, dealerId);
+    res.json({ success: true, data: result.recordset });
+  } catch (err) {
+    console.error('Errore in /api/dealer/andamento:', err);
+    res.status(500).json({ error: 'Errore nel recupero andamento mensile', details: err.message });
+  }
+});
+
+return router;
+}
+
+export default createDealerRouter;

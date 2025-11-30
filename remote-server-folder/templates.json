@@ -1,0 +1,1338 @@
+[
+  {
+    "template": "FISSO_BUSINESS",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO RAPPR. LEGALE", "tipo": "file", "obbligatorio": true },
+      { "key": "fattura", "label": "FATTURA VECCHIO GESTORE", "tipo": "file", "obbligatorio": false },
+      { "key": "piva", "label": "DOCUMENTO ATTRIBUZIONE PARTITA IVA", "tipo": "file", "obbligatorio": false },
+      { "key": "doc_iban", "label": "DOCUMENTO INTESTATARIO IBAN", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME_RAPPRESENTANTE_LEGALE", "label": "NOME E COGNOME RAPPRESENTANTE LEGALE", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE_RAPPRESENTANTE_LEGALE", "label": "CODICE FISCALE RAPPRESENTANTE LEGALE", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_DI_NASCITA", "label": "DATA DI NASCITA", "tipo": "date", "obbligatorio": true, "pattern": "DD/MM/YYYY" },
+      { "key": "LUOGO_DI_NASCITA", "label": "LUOGO DI NASCITA", "tipo": "text", "obbligatorio": true },
+      { "key": "RAGIONE_SOCIALE_AZIENDA", "label": "RAGIONE SOCIALE AZIENDA", "tipo": "text", "obbligatorio": true },
+      { "key": "CAP_AZIENDA", "label": "CAP AZIENDA", "tipo": "text", "obbligatorio": true, "lunghezza": 5 },
+      { "key": "CITTA_AZIENDA", "label": "CITTÀ AZIENDA", "tipo": "text", "obbligatorio": true },
+      { "key": "PARTITA_IVA", "label": "PARTITA IVA", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_AZIENDA", "label": "INDIRIZZO E CIVICO AZIENDA", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_ATTIVAZIONE_AZIENDA", "label": "INDIRIZZO E CIVICO ATTIVAZIONE AZIENDA", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_DI_RIFERIMENTO", "label": "RECAPITO DI RIFERIMENTO (PER FIRMA DIGITALE)", "tipo": "text", "obbligatorio": true },
+      { "key": "EMAIL_AZIENDA", "label": "EMAIL AZIENDA", "tipo": "email", "obbligatorio": true },
+      { "key": "PEC", "label": "PEC", "tipo": "email", "obbligatorio": false },
+      { "key": "INTESTATARIO_METODO_DI_PAGAMENTO", "label": "INTESTATARIO METODO DI PAGAMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "IBAN", "label": "IBAN", "tipo": "text", "obbligatorio": true, "lunghezza": 27 },
+      { "key": "TIPO_DI_DOCUMENTO", "label": "TIPO DI DOCUMENTO", "tipo": "select", "opzioni": ["C.IDENTITA'", "PATENTE", "PASSAPORTO"], "obbligatorio": true },
+      { "key": "NUMERO_DOCUMENTO", "label": "NUMERO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_E_LUOGO_RILASCIO_DOCUMENTO", "label": "DATA E LUOGO RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "ENTE_RILASCIO_DOCUMENTO", "label": "ENTE RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SCADENZA_DOCUMENTO", "label": "SCADENZA DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_DI_MIGRAZIONE_1", "label": "CODICE DI MIGRAZIONE 1", "tipo": "text", "obbligatorio": false },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "1MOBILE_CONSUMER_NOMNP",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO RAPPR. LEGALE", "tipo": "file", "obbligatorio": true },
+      { "key": "sim", "label": "FOTO SIM NUOVA", "tipo": "file", "obbligatorio": false },
+      { "key": "doc_iban", "label": "DOCUMENTO INTESTATARIO IBAN", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME_INTESTATARIO_CONTRATTO", "label": "NOME E COGNOME INTESTATARIO CONTRATTO", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE_INTESTATARIO", "label": "CODICE FISCALE INTESTATARIO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_DI_NASCITA", "label": "DATA DI NASCITA", "tipo": "date", "obbligatorio": true, "pattern": "DD/MM/YYYY" },
+      { "key": "LUOGO_DI_NASCITA", "label": "LUOGO DI NASCITA", "tipo": "text", "obbligatorio": true },
+      { "key": "CAP", "label": "CAP", "tipo": "text", "obbligatorio": true, "lunghezza": 5 },
+      { "key": "CITTA", "label": "CITTÀ", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_ATTIVAZIONE", "label": "INDIRIZZO E CIVICO ATTIVAZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_DI_RIFERIMENTO", "label": "RECAPITO DI RIFERIMENTO (PER FIRMA DIGITALE)", "tipo": "text", "obbligatorio": true },
+      { "key": "EMAIL", "label": "EMAIL", "tipo": "email", "obbligatorio": true },
+      { "key": "PEC", "label": "PEC", "tipo": "email", "obbligatorio": false },
+      { "key": "INTESTATARIO_METODO_DI_PAGAMENTO", "label": "INTESTATARIO METODO DI PAGAMENTO (FACOLTATIVO)", "tipo": "text", "obbligatorio": false },
+      { "key": "IBAN", "label": "IBAN (FACOLTATIVO)", "tipo": "text", "obbligatorio": false },
+      { "key": "TIPO_DI_DOCUMENTO", "label": "TIPO DI DOCUMENTO", "tipo": "select", "opzioni": ["C.IDENTITA'", "PATENTE", "PASSAPORTO"], "obbligatorio": true },
+      { "key": "NUMERO_DOCUMENTO", "label": "NUMERO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_E_LUOGO_RILASCIO_DOCUMENTO", "label": "DATA E LUOGO RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "ENTE_RILASCIO_DOCUMENTO", "label": "ENTE RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SCADENZA_DOCUMENTO", "label": "SCADENZA DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SERIALE_SIM_DA_ATTIVARE", "label": "SERIALE SIM DA ATTIVARE", "tipo": "text", "obbligatorio": true },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "1MOBILE_CONSUMER",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO RAPPR. LEGALE", "tipo": "file", "obbligatorio": true },
+      { "key": "provenienza", "label": "FOTO SIM GESTORE DI PROVENIENZA", "tipo": "file", "obbligatorio": false },
+      { "key": "sim", "label": "FOTO SIM NUOVA", "tipo": "file", "obbligatorio": false },
+      { "key": "doc_iban", "label": "DOCUMENTO INTESTATARIO IBAN", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME_INTESTATARIO_CONTRATTO", "label": "NOME E COGNOME INTESTATARIO CONTRATTO", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE_INTESTATARIO", "label": "CODICE FISCALE INTESTATARIO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_DI_NASCITA", "label": "DATA DI NASCITA", "tipo": "date", "obbligatorio": true, "pattern": "DD/MM/YYYY" },
+      { "key": "LUOGO_DI_NASCITA", "label": "LUOGO DI NASCITA", "tipo": "text", "obbligatorio": true },
+      { "key": "CAP", "label": "CAP", "tipo": "text", "obbligatorio": true, "lunghezza": 5 },
+      { "key": "CITTA", "label": "CITTÀ", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_ATTIVAZIONE", "label": "INDIRIZZO E CIVICO ATTIVAZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_DI_RIFERIMENTO", "label": "RECAPITO DI RIFERIMENTO (PER FIRMA DIGITALE)", "tipo": "text", "obbligatorio": true },
+      { "key": "EMAIL", "label": "EMAIL", "tipo": "email", "obbligatorio": true },
+      { "key": "PEC", "label": "PEC", "tipo": "email", "obbligatorio": false },
+      { "key": "INTESTATARIO_METODO_DI_PAGAMENTO", "label": "INTESTATARIO METODO DI PAGAMENTO", "tipo": "text", "obbligatorio": false },
+      { "key": "IBAN", "label": "IBAN", "tipo": "text", "obbligatorio": false },
+      { "key": "TIPO_DI_DOCUMENTO", "label": "TIPO DI DOCUMENTO", "tipo": "select", "opzioni": ["C.IDENTITA'", "PATENTE", "PASSAPORTO"], "obbligatorio": true },
+      { "key": "NUMERO_DOCUMENTO", "label": "NUMERO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_E_LUOGO_RILASCIO_DOCUMENTO", "label": "DATA E LUOGO RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "ENTE_RILASCIO_DOCUMENTO", "label": "ENTE RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SCADENZA_DOCUMENTO", "label": "SCADENZA DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "NUMERO_DA_PASSARE", "label": "NUMERO DA PASSARE", "tipo": "text", "obbligatorio": true },
+      { "key": "GESTORE_DI_PROVENIENZA", "label": "GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": true},
+      { "key": "SERIALE_SIM_DA_ATTIVARE", "label": "SERIALE SIM DA ATTIVARE", "tipo": "text", "obbligatorio": true },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "ONLY_TV",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO RAPPR. LEGALE", "tipo": "file", "obbligatorio": true }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME", "label": "NOME E COGNOME", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE", "label": "CODICE FISCALE", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_DI_NASCITA", "label": "DATA DI NASCITA", "tipo": "date", "obbligatorio": true, "pattern": "DD/MM/YYYY" },
+      { "key": "LUOGO_DI_NASCITA", "label": "LUOGO DI NASCITA", "tipo": "text", "obbligatorio": true },
+      { "key": "CAP", "label": "CAP", "tipo": "text", "obbligatorio": true, "lunghezza": 5 },
+      { "key": "CITTA", "label": "CITTA", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_ATTIVAZIONE", "label": "INDIRIZZO E CIVICO ATTIVAZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_SPEDIZIONE", "label": "INDIRIZZO SPEDIZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_DI_RIFERIMENTO", "label": "RECAPITO DI RIFERIMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "EMAIL", "label": "EMAIL", "tipo": "email", "obbligatorio": true },
+
+      { "key": "INTESTATARIO_METODO_DI_PAGAMENTO", "label": "INTESTATARIO METODO DI PAGAMENTO", "tipo": "text", "obbligatorio": false },
+      { "key": "IBAN", "label": "IBAN", "tipo": "text", "obbligatorio": false },
+      { "key": "TIPO_DI_DOCUMENTO", "label": "TIPO DI DOCUMENTO", "tipo": "select", "opzioni": ["C.IDENTITA'", "PATENTE", "PASSAPORTO"], "obbligatorio": true },
+      { "key": "NUMERO_DOCUMENTO", "label": "NUMERO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_E_LUOGO_RILASCIO_DOCUMENTO", "label": "DATA E LUOGO RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "ENTE_RILASCIO_DOCUMENTO", "label": "ENTE RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SCADENZA_DOCUMENTO", "label": "SCADENZA DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "SKY_WIFI_3P_4P",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO RAPPR. LEGALE", "tipo": "file", "obbligatorio": true },
+      { "key": "fattura", "label": "FATTURA VECCHIO GESTORE", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME", "label": "NOME E COGNOME", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE", "label": "CODICE FISCALE", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_DI_NASCITA", "label": "DATA DI NASCITA", "tipo": "date", "obbligatorio": true, "pattern": "DD/MM/YYYY" },
+      { "key": "LUOGO_DI_NASCITA", "label": "LUOGO DI NASCITA", "tipo": "text", "obbligatorio": true },
+      { "key": "CAP", "label": "CAP", "tipo": "text", "obbligatorio": true, "lunghezza": 5 },
+      { "key": "CITTA", "label": "CITTA", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_ATTIVAZIONE", "label": "INDIRIZZO E CIVICO ATTIVAZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_SPEDIZIONE", "label": "INDIRIZZO SPEDIZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_DI_RIFERIMENTO", "label": "RECAPITO DI RIFERIMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "EMAIL", "label": "EMAIL", "tipo": "email", "obbligatorio": true },
+
+      { "key": "INTESTATARIO_METODO_DI_PAGAMENTO", "label": "INTESTATARIO METODO DI PAGAMENTO", "tipo": "text", "obbligatorio": false },
+      { "key": "IBAN", "label": "IBAN", "tipo": "text", "obbligatorio": false },
+      { "key": "TIPO_DI_DOCUMENTO", "label": "TIPO DI DOCUMENTO", "tipo": "select", "opzioni": ["C.IDENTITA'", "PATENTE", "PASSAPORTO"], "obbligatorio": true },
+      { "key": "NUMERO_DOCUMENTO", "label": "NUMERO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_E_LUOGO_RILASCIO_DOCUMENTO", "label": "DATA E LUOGO RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "ENTE_RILASCIO_DOCUMENTO", "label": "ENTE RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SCADENZA_DOCUMENTO", "label": "SCADENZA DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "GESTORE_DI_PROVENIENZA", "label": "GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": false },
+      { "key": "CODICE_DI_MIGRAZIONE", "label": "CODICE DI MIGRAZIONE", "tipo": "text", "obbligatorio": false },
+      { "key": "CHIAMATE_INCLUSE", "label": "CHIAMATE INCLUSE", "tipo": "select", "opzioni": ["SI", "NO"], "obbligatorio": false },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "MOBILE_CONSUMER",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO RAPPR. LEGALE", "tipo": "file", "obbligatorio": true },
+      { "key": "provenienza", "label": "FOTO SIM GESTORE DI PROVENIENZA", "tipo": "file", "obbligatorio": false },
+      { "key": "sim", "label": "FOTO SIM NUOVA", "tipo": "file", "obbligatorio": false },
+      { "key": "doc_iban", "label": "DOCUMENTO INTESTATARIO IBAN (Obbligatorio in caso di pagamento con IBAN)", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME_INTESTATARIO_CONTRATTO", "label": "NOME E COGNOME INTESTATARIO CONTRATTO", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE_INTESTATARIO", "label": "CODICE FISCALE INTESTATARIO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_DI_NASCITA", "label": "DATA DI NASCITA", "tipo": "date", "obbligatorio": true, "pattern": "DD/MM/YYYY" },
+      { "key": "LUOGO_DI_NASCITA", "label": "LUOGO DI NASCITA", "tipo": "text", "obbligatorio": true },
+      { "key": "CAP", "label": "CAP", "tipo": "text", "obbligatorio": true, "lunghezza": 5 },
+      { "key": "CITTA", "label": "CITTÀ", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_ATTIVAZIONE", "label": "INDIRIZZO E CIVICO ATTIVAZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_DI_RIFERIMENTO", "label": "RECAPITO DI RIFERIMENTO (PER FIRMA DIGITALE)", "tipo": "text", "obbligatorio": true },
+      { "key": "EMAIL", "label": "EMAIL", "tipo": "email", "obbligatorio": true },
+      { "key": "PEC", "label": "PEC", "tipo": "email", "obbligatorio": false },
+      { "key": "INTESTATARIO_METODO_DI_PAGAMENTO", "label": "INTESTATARIO METODO DI PAGAMENTO", "tipo": "text", "obbligatorio": false },
+      { "key": "IBAN", "label": "IBAN", "tipo": "text", "obbligatorio": false },
+      { "key": "TIPO_DI_DOCUMENTO", "label": "TIPO DI DOCUMENTO", "tipo": "select", "opzioni": ["C.IDENTITA'", "PATENTE", "PASSAPORTO"], "obbligatorio": true },
+      { "key": "NUMERO_DOCUMENTO", "label": "NUMERO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_E_LUOGO_RILASCIO_DOCUMENTO", "label": "DATA E LUOGO RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "ENTE_RILASCIO_DOCUMENTO", "label": "ENTE RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SCADENZA_DOCUMENTO", "label": "SCADENZA DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "NUMERO_DA_PASSARE", "label": "NUMERO DA PASSARE", "tipo": "text", "obbligatorio": true },
+      { "key": "GESTORE_DI_PROVENIENZA", "label": "GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": false },
+      { "key": "SERIALE_SIM_DA_ATTIVARE", "label": "SERIALE SIM DA ATTIVARE", "tipo": "text", "obbligatorio": true },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "ILIAD",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO RAPPR. LEGALE", "tipo": "file", "obbligatorio": true },
+      { "key": "provenienza", "label": "FOTO SIM GESTORE DI PROVENIENZA", "tipo": "file", "obbligatorio": false },
+      { "key": "sim", "label": "FOTO SIM NUOVA", "tipo": "file", "obbligatorio": false },
+      { "key": "doc_iban", "label": "DOCUMENTO INTESTATARIO IBAN (Obbligatorio in caso di pagamento con IBAN)", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME_INTESTATARIO_CONTRATTO", "label": "NOME E COGNOME INTESTATARIO CONTRATTO", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE_INTESTATARIO", "label": "CODICE FISCALE INTESTATARIO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_DI_NASCITA", "label": "DATA DI NASCITA", "tipo": "date", "obbligatorio": true, "pattern": "DD/MM/YYYY" },
+      { "key": "LUOGO_DI_NASCITA", "label": "LUOGO DI NASCITA", "tipo": "text", "obbligatorio": true },
+      { "key": "CAP", "label": "CAP", "tipo": "text", "obbligatorio": true, "lunghezza": 5 },
+      { "key": "CITTA", "label": "CITTÀ", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_ATTIVAZIONE", "label": "INDIRIZZO E CIVICO ATTIVAZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_DI_RIFERIMENTO", "label": "RECAPITO DI RIFERIMENTO (PER FIRMA DIGITALE)", "tipo": "text", "obbligatorio": true },
+      { "key": "EMAIL", "label": "EMAIL", "tipo": "email", "obbligatorio": true },
+      { "key": "PEC", "label": "PEC", "tipo": "email", "obbligatorio": false },
+      { "key": "INTESTATARIO_METODO_DI_PAGAMENTO", "label": "INTESTATARIO METODO DI PAGAMENTO", "tipo": "text", "obbligatorio": false },
+      { "key": "IBAN", "label": "IBAN", "tipo": "text", "obbligatorio": false },
+      { "key": "TIPO_DI_DOCUMENTO", "label": "TIPO DI DOCUMENTO", "tipo": "select", "opzioni": ["C.IDENTITA'", "PATENTE", "PASSAPORTO"], "obbligatorio": true },
+      { "key": "NUMERO_DOCUMENTO", "label": "NUMERO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_E_LUOGO_RILASCIO_DOCUMENTO", "label": "DATA E LUOGO RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "ENTE_RILASCIO_DOCUMENTO", "label": "ENTE RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SCADENZA_DOCUMENTO", "label": "SCADENZA DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "NUMERO_DA_PASSARE", "label": "NUMERO DA PASSARE", "tipo": "text", "obbligatorio": true, "placeholder": "Solo MNP. Se nuovo numero inserisci '000000000'" },
+      { "key": "GESTORE_DI_PROVENIENZA", "label": "GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": false, "placeholder": "Inserisci 'Nessuno' in caso di nuovo numero" },
+      { "key": "SERIALE_SIM_DA_ATTIVARE", "label": "SERIALE SIM DA ATTIVARE", "tipo": "text", "obbligatorio": true },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "FISSO_CONSUMER",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO", "tipo": "file", "obbligatorio": true },
+      { "key": "fattura", "label": "FATTURA VECCHIO GESTORE", "tipo": "file", "obbligatorio": false },
+      { "key": "doc_iban", "label": "DOCUMENTO INTESTATARIO IBAN", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME", "label": "NOME E COGNOME", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE", "label": "CODICE FISCALE", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_DI_NASCITA", "label": "DATA DI NASCITA", "tipo": "date", "obbligatorio": true, "pattern": "DD/MM/YYYY" },
+      { "key": "LUOGO_DI_NASCITA", "label": "LUOGO DI NASCITA", "tipo": "text", "obbligatorio": true },
+      { "key": "CAP", "label": "CAP", "tipo": "text", "obbligatorio": true, "lunghezza": 5 },
+      { "key": "CITTA", "label": "CITTÀ", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_ATTIVAZIONE", "label": "INDIRIZZO E CIVICO ATTIVAZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_DI_RIFERIMENTO", "label": "RECAPITO DI RIFERIMENTO (PER FIRMA DIGITALE)", "tipo": "text", "obbligatorio": true },
+      { "key": "EMAIL", "label": "EMAIL", "tipo": "email", "obbligatorio": true },
+      { "key": "PEC", "label": "PEC", "tipo": "email", "obbligatorio": false },
+      { "key": "INTESTATARIO_METODO_DI_PAGAMENTO", "label": "INTESTATARIO METODO DI PAGAMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "IBAN", "label": "IBAN", "tipo": "text", "obbligatorio": true, "lunghezza": 27 },
+      { "key": "TIPO_DI_DOCUMENTO", "label": "TIPO DI DOCUMENTO", "tipo": "select", "opzioni": ["C.IDENTITA'", "PATENTE", "PASSAPORTO"], "obbligatorio": true },
+      { "key": "NUMERO_DOCUMENTO", "label": "NUMERO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_E_LUOGO_RILASCIO_DOCUMENTO", "label": "DATA E LUOGO RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "ENTE_RILASCIO_DOCUMENTO", "label": "ENTE RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SCADENZA_DOCUMENTO", "label": "SCADENZA DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_DI_MIGRAZIONE_1", "label": "CODICE DI MIGRAZIONE 1", "tipo": "text", "obbligatorio": false },
+      { "key": "CODICE_DI_MIGRAZIONE_2", "label": "CODICE DI MIGRAZIONE 2", "tipo": "text", "obbligatorio": false },
+      { "key": "GESTORE_DI_PROVENIENZA", "label": "GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": false },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "ENERGIA_CONSUMER",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO", "tipo": "file", "obbligatorio": true },
+      { "key": "fattura", "label": "FATTURA VECCHIO GESTORE", "tipo": "file", "obbligatorio": false },
+      { "key": "doc_iban", "label": "DOCUMENTO INTESTATARIO IBAN", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME_INTESTATARIO_CONTRATTO", "label": "NOME E COGNOME INTESTATARIO CONTRATTO", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE", "label": "CODICE FISCALE", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_DI_NASCITA", "label": "DATA DI NASCITA", "tipo": "date", "obbligatorio": true, "pattern": "DD/MM/YYYY" },
+      { "key": "LUOGO_DI_NASCITA", "label": "LUOGO DI NASCITA", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_INTESTATARIO_CONTRATTO", "label": "INDIRIZZO E CIVICO INTESTATARIO CONTRATTO", "tipo": "text", "obbligatorio": true },
+      { "key": "CAP", "label": "CAP", "tipo": "text", "obbligatorio": true, "lunghezza": 5 },
+      { "key": "CITTA", "label": "CITTÀ", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_ATTIVAZIONE_CONTRATTO", "label": "INDIRIZZO E CIVICO ATTIVAZIONE CONTRATTO", "tipo": "text", "obbligatorio": true },
+      { "key": "CAP_ATTIVAZIONE", "label": "CAP ATTIVAZIONE", "tipo": "text", "obbligatorio": true, "lunghezza": 5 },
+      { "key": "CITTA_DI_ATTIVAZIONE", "label": "CITTÀ DI ATTIVAZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_DI_RIFERIMENTO", "label": "RECAPITO DI RIFERIMENTO (PER FIRMA DIGITALE)", "tipo": "text", "obbligatorio": true },
+      { "key": "EMAIL", "label": "EMAIL", "tipo": "email", "obbligatorio": true },
+      { "key": "PEC", "label": "PEC", "tipo": "email", "obbligatorio": false },
+      { "key": "INTESTATARIO_METODO_DI_PAGAMENTO", "label": "INTESTATARIO METODO DI PAGAMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "IBAN", "label": "IBAN", "tipo": "text", "obbligatorio": true, "lunghezza": 27 },
+      { "key": "TIPO_DI_DOCUMENTO", "label": "TIPO DI DOCUMENTO", "tipo": "select", "opzioni": ["C.IDENTITA'", "PATENTE", "PASSAPORTO"], "obbligatorio": true },
+      { "key": "NUMERO_DOCUMENTO", "label": "NUMERO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_E_LUOGO_RILASCIO_DOCUMENTO", "label": "DATA E LUOGO RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "ENTE_RILASCIO_DOCUMENTO", "label": "ENTE RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SCADENZA_DOCUMENTO", "label": "SCADENZA DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "TIPO_DI_FORNITURA", "label": "TIPO DI FORNITURA", "tipo": "select", "opzioni": ["DOMESTICO", "ALTRI_USI"], "obbligatorio": true },
+      { "key": "CODICE_POD", "label": "CODICE POD", "tipo": "text", "obbligatorio": false },
+      { "key": "POTENZA_DISPONIBILE_KWH", "label": "POTENZA DISPONIBILE (KWH)", "tipo": "text", "obbligatorio": false },
+      { "key": "PROVENIENZA_CLIENTE", "label": "INDICA LA PROVENIENZA DEL CLIENTE", "tipo": "select", "opzioni": ["NESSUNA", "FASTWEB", "VODAFONE"], "obbligatorio": false },
+      { "key": "CF_PIVA_CONVERGENZA", "label": "INSERISCI QUI CF/PIVA PER SCONTO CONVERGENZA", "tipo": "text", "obbligatorio": false },
+      { "key": "DATI_OFFERTA", "label": "DATI OFFERTA", "tipo": "text", "obbligatorio": false },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "ENERGIA_BUS",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO", "tipo": "file", "obbligatorio": true },
+      { "key": "fattura", "label": "FATTURA VECCHIO GESTORE", "tipo": "file", "obbligatorio": false },
+      { "key": "visura_camerale", "label": "VISURA CAMERALE", "tipo": "file", "obbligatorio": true },
+      { "key": "doc_iban", "label": "DOCUMENTO INTESTATARIO IBAN", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME_INTESTATARIO_CONTRATTO", "label": "NOME E COGNOME INTESTATARIO CONTRATTO", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE", "label": "CODICE FISCALE", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_DI_NASCITA", "label": "DATA DI NASCITA", "tipo": "date", "obbligatorio": true, "pattern": "DD/MM/YYYY" },
+      { "key": "LUOGO_DI_NASCITA", "label": "LUOGO DI NASCITA", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_INTESTATARIO_CONTRATTO", "label": "INDIRIZZO E CIVICO INTESTATARIO CONTRATTO", "tipo": "text", "obbligatorio": true },
+      { "key": "CAP", "label": "CAP", "tipo": "text", "obbligatorio": true, "lunghezza": 5 },
+      { "key": "CITTA", "label": "CITTÀ", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_ATTIVAZIONE_CONTRATTO", "label": "INDIRIZZO E CIVICO ATTIVAZIONE CONTRATTO", "tipo": "text", "obbligatorio": true },
+      { "key": "CAP_ATTIVAZIONE", "label": "CAP ATTIVAZIONE", "tipo": "text", "obbligatorio": true, "lunghezza": 5 },
+      { "key": "CITTA_DI_ATTIVAZIONE", "label": "CITTÀ DI ATTIVAZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_DI_RIFERIMENTO", "label": "RECAPITO DI RIFERIMENTO (PER FIRMA DIGITALE)", "tipo": "text", "obbligatorio": true },
+      { "key": "EMAIL", "label": "EMAIL", "tipo": "email", "obbligatorio": true },
+      { "key": "PEC", "label": "PEC", "tipo": "email", "obbligatorio": false },
+      { "key": "INTESTATARIO_METODO_DI_PAGAMENTO", "label": "INTESTATARIO METODO DI PAGAMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "IBAN", "label": "IBAN", "tipo": "text", "obbligatorio": true, "lunghezza": 27 },
+      { "key": "TIPO_DI_DOCUMENTO", "label": "TIPO DI DOCUMENTO", "tipo": "select", "opzioni": ["C.IDENTITA'", "PATENTE", "PASSAPORTO"], "obbligatorio": true },
+      { "key": "NUMERO_DOCUMENTO", "label": "NUMERO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_E_LUOGO_RILASCIO_DOCUMENTO", "label": "DATA E LUOGO RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "ENTE_RILASCIO_DOCUMENTO", "label": "ENTE RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SCADENZA_DOCUMENTO", "label": "SCADENZA DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "TIPO_DI_FORNITURA", "label": "TIPO DI FORNITURA", "tipo": "select", "opzioni": ["DOMESTICO", "ALTRI_USI"], "obbligatorio": true },
+      { "key": "CODICE_POD", "label": "CODICE POD", "tipo": "text", "obbligatorio": false },
+      { "key": "POTENZA_DISPONIBILE_KWH", "label": "POTENZA DISPONIBILE (KWH)", "tipo": "text", "obbligatorio": false },
+      { "key": "PROVENIENZA_CLIENTE", "label": "INDICA LA PROVENIENZA DEL CLIENTE", "tipo": "select", "opzioni": ["NESSUNA", "FASTWEB", "VODAFONE"], "obbligatorio": false },
+      { "key": "CF_PIVA_CONVERGENZA", "label": "INSERISCI QUI CF/PIVA PER SCONTO CONVERGENZA", "tipo": "text", "obbligatorio": false },
+      { "key": "DATI_OFFERTA", "label": "DATI OFFERTA", "tipo": "text", "obbligatorio": false },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "FINANZ_CONSUMER",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO RAPPR. LEGALE", "tipo": "file", "obbligatorio": true },
+      { "key": "provenienza", "label": "FOTO SIM GESTORE DI PROVENIENZA", "tipo": "file", "obbligatorio": false },
+      { "key": "sim", "label": "FOTO SIM NUOVA", "tipo": "file", "obbligatorio": false },
+      { "key": "busta_paga", "label": "ULTIMA BUSTA PAGA - OBBLIGATORIO", "tipo": "file", "obbligatorio": true },
+      { "key": "doc_iban", "label": "DOCUMENTO INTESTATARIO IBAN", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME_INTESTATARIO_CONTRATTO", "label": "NOME E COGNOME INTESTATARIO CONTRATTO", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE_INTESTATARIO", "label": "CODICE FISCALE INTESTATARIO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_DI_NASCITA", "label": "DATA DI NASCITA", "tipo": "date", "obbligatorio": true, "pattern": "DD/MM/YYYY" },
+      { "key": "LUOGO_DI_NASCITA", "label": "LUOGO DI NASCITA", "tipo": "text", "obbligatorio": true },
+      { "key": "CAP", "label": "CAP", "tipo": "text", "obbligatorio": true, "lunghezza": 5 },
+      { "key": "CITTA", "label": "CITTÀ", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_ATTIVAZIONE", "label": "INDIRIZZO E CIVICO ATTIVAZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_DI_RIFERIMENTO", "label": "RECAPITO DI RIFERIMENTO (PER FIRMA DIGITALE)", "tipo": "text", "obbligatorio": true },
+      { "key": "EMAIL", "label": "EMAIL", "tipo": "email", "obbligatorio": true },
+      { "key": "PEC", "label": "PEC", "tipo": "email", "obbligatorio": false },
+      { "key": "INTESTATARIO_METODO_DI_PAGAMENTO", "label": "INTESTATARIO METODO DI PAGAMENTO", "tipo": "text", "obbligatorio": false },
+      { "key": "IBAN", "label": "IBAN", "tipo": "text", "obbligatorio": false },
+      { "key": "TIPO_DI_DOCUMENTO", "label": "TIPO DI DOCUMENTO", "tipo": "select", "opzioni": ["C.IDENTITA'", "PATENTE", "PASSAPORTO"], "obbligatorio": true },
+      { "key": "NUMERO_DOCUMENTO", "label": "NUMERO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_E_LUOGO_RILASCIO_DOCUMENTO", "label": "DATA E LUOGO RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "ENTE_RILASCIO_DOCUMENTO", "label": "ENTE RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SCADENZA_DOCUMENTO", "label": "SCADENZA DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "NUMERO_DA_PASSARE", "label": "NUMERO DA PASSARE", "tipo": "text", "obbligatorio": true },
+      { "key": "GESTORE_DI_PROVENIENZA", "label": "GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": false },
+      { "key": "SERIALE_SIM_DA_ATTIVARE", "label": "SERIALE SIM DA ATTIVARE", "tipo": "text", "obbligatorio": true },
+      { "key": "MODELLO_E_COLORE_TERMINALE", "label": "MODELLO E COLORE TERMINALE", "tipo": "text", "obbligatorio": true },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "TV_CONSUMER",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO RAPPR. LEGALE", "tipo": "file", "obbligatorio": true },
+      { "key": "doc_iban", "label": "DOCUMENTO INTESTATARIO IBAN", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME_INTESTATARIO_CONTRATTO", "label": "NOME E COGNOME INTESTATARIO CONTRATTO", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE_INTESTATARIO", "label": "CODICE FISCALE INTESTATARIO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_DI_NASCITA", "label": "DATA DI NASCITA", "tipo": "date", "obbligatorio": true, "pattern": "DD/MM/YYYY" },
+      { "key": "LUOGO_DI_NASCITA", "label": "LUOGO DI NASCITA", "tipo": "text", "obbligatorio": true },
+      { "key": "CAP", "label": "CAP", "tipo": "text", "obbligatorio": true, "lunghezza": 5 },
+      { "key": "CITTA", "label": "CITTÀ", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_ATTIVAZIONE", "label": "INDIRIZZO E CIVICO ATTIVAZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_SPEDIZIONE_DECODER", "label": "INDIRIZZO E CIVICO SPEDIZIONE DECODER", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_DI_RIFERIMENTO", "label": "RECAPITO DI RIFERIMENTO (PER FIRMA DIGITALE)", "tipo": "text", "obbligatorio": true },
+      { "key": "EMAIL", "label": "EMAIL", "tipo": "email", "obbligatorio": true },
+      { "key": "PEC", "label": "PEC", "tipo": "email", "obbligatorio": false },
+      { "key": "INTESTATARIO_METODO_DI_PAGAMENTO", "label": "INTESTATARIO METODO DI PAGAMENTO", "tipo": "text", "obbligatorio": false },
+      { "key": "IBAN", "label": "IBAN", "tipo": "text", "obbligatorio": false },
+      { "key": "TIPO_DI_DOCUMENTO", "label": "TIPO DI DOCUMENTO", "tipo": "select", "opzioni": ["C.IDENTITA'", "PATENTE", "PASSAPORTO"], "obbligatorio": true },
+      { "key": "NUMERO_DOCUMENTO", "label": "NUMERO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_E_LUOGO_RILASCIO_DOCUMENTO", "label": "DATA E LUOGO RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "ENTE_RILASCIO_DOCUMENTO", "label": "ENTE RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SCADENZA_DOCUMENTO", "label": "SCADENZA DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "NUMERO_DA_PASSARE", "label": "NUMERO DA PASSARE", "tipo": "text", "obbligatorio": false },
+      { "key": "GESTORE_DI_PROVENIENZA", "label": "GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": false },
+      { "key": "SERIALE_SIM_DA_ATTIVARE", "label": "SERIALE SIM DA ATTIVARE", "tipo": "text", "obbligatorio": false },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "SKY_WIFI_TV",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO RAPPR. LEGALE", "tipo": "file", "obbligatorio": true },
+      { "key": "gestore", "label": "FATTURA VECCHIO GESTORE", "tipo": "file", "obbligatorio": false },
+      { "key": "intestatario_iban", "label": "DOCUMENTO INTESTATARIO IBAN", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME_INTESTATARIO_CONTRATTO", "label": "NOME E COGNOME INTESTATARIO CONTRATTO", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE_INTESTATARIO", "label": "CODICE FISCALE INTESTATARIO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_DI_NASCITA", "label": "DATA DI NASCITA", "tipo": "date", "obbligatorio": true, "pattern": "DD/MM/YYYY" },
+      { "key": "LUOGO_DI_NASCITA", "label": "LUOGO DI NASCITA", "tipo": "text", "obbligatorio": true },
+      { "key": "CAP", "label": "CAP", "tipo": "text", "obbligatorio": true, "lunghezza": 5 },
+      { "key": "CITTA", "label": "CITTÀ", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_ATTIVAZIONE", "label": "INDIRIZZO E CIVICO ATTIVAZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_SPEDIZIONE_DECODER", "label": "INDIRIZZO E CIVICO SPEDIZIONE DECODER", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_DI_RIFERIMENTO", "label": "RECAPITO DI RIFERIMENTO (PER FIRMA DIGITALE)", "tipo": "text", "obbligatorio": true },
+      { "key": "EMAIL", "label": "EMAIL", "tipo": "email", "obbligatorio": true },
+      { "key": "PEC", "label": "PEC", "tipo": "email", "obbligatorio": false },
+      { "key": "INTESTATARIO_METODO_DI_PAGAMENTO", "label": "INTESTATARIO METODO DI PAGAMENTO", "tipo": "text", "obbligatorio": false },
+      { "key": "IBAN", "label": "IBAN", "tipo": "text", "obbligatorio": false },
+      { "key": "NUMERO_DI_RETE_FISSA_DA_PASSARE", "label": "NUMERO DI RETE FISSA DA PASSARE", "tipo": "text", "obbligatorio": true },
+      { "key": "GESTORE_DI_PROVENIENZA", "label": "GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_DI_MIGRAZIONE", "label": "CODICE DI MIGRAZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "TIPO_DI_DOCUMENTO", "label": "TIPO DI DOCUMENTO", "tipo": "select", "opzioni": ["C.IDENTITA'", "PATENTE", "PASSAPORTO"], "obbligatorio": true },
+      { "key": "NUMERO_DOCUMENTO", "label": "NUMERO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_E_LUOGO_RILASCIO_DOCUMENTO", "label": "DATA E LUOGO RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "ENTE_RILASCIO_DOCUMENTO", "label": "ENTE RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SCADENZA_DOCUMENTO", "label": "SCADENZA DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "SKY_MOBILE_PORTABILITA",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO RAPPR. LEGALE", "tipo": "file", "obbligatorio": true },
+      { "key": "provenienza", "label": "FOTO SIM GESTORE DI PROVENIENZA", "tipo": "file", "obbligatorio": false },
+      { "key": "sim", "label": "SIM GESTORE DA ATTIVARE", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME_INTESTATARIO_CONTRATTO", "label": "NOME E COGNOME INTESTATARIO CONTRATTO", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE_INTESTATARIO", "label": "CODICE FISCALE INTESTATARIO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_DI_NASCITA", "label": "DATA DI NASCITA", "tipo": "date", "obbligatorio": true, "pattern": "DD/MM/YYYY" },
+      { "key": "LUOGO_DI_NASCITA", "label": "LUOGO DI NASCITA", "tipo": "text", "obbligatorio": true },
+      { "key": "CAP", "label": "CAP", "tipo": "text", "obbligatorio": true, "lunghezza": 5 },
+      { "key": "CITTA", "label": "CITTA", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_ATTIVAZIONE", "label": "INDIRIZZO E CIVICO ATTIVAZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_DI_RIFERIMENTO", "label": "RECAPITO DI RIFERIMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "EMAIL", "label": "EMAIL", "tipo": "email", "obbligatorio": true },
+      { "key": "IBAN", "label": "IBAN", "tipo": "text", "obbligatorio": false },
+      { "key": "TIPO_DI_DOCUMENTO", "label": "TIPO DI DOCUMENTO", "tipo": "select", "opzioni": ["C.IDENTITA'", "PATENTE", "PASSAPORTO"], "obbligatorio": true },
+      { "key": "NUMERO_DOCUMENTO", "label": "NUMERO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_E_LUOGO_RILASCIO_DOCUMENTO", "label": "DATA E LUOGO RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "ENTE_RILASCIO_DOCUMENTO", "label": "ENTE RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SCADENZA_DOCUMENTO", "label": "SCADENZA DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "NUMERO_DA_PASSARE", "label": "NUMERO DA PASSARE", "tipo": "text", "obbligatorio": true },
+      { "key": "GESTORE_DI_PROVENIENZA", "label": "GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": true },
+      { "key": "SERIALE_SIM_DA_ATTIVARE", "label": "SERIALE SIM DA ATTIVARE", "tipo": "text", "obbligatorio": true }
+    ]
+  },
+  {
+    "template": "SKY_MOBILE_NUOVO_NUMERO",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO RAPPR. LEGALE", "tipo": "file", "obbligatorio": true },
+      { "key": "sim", "label": "SIM GESTORE DA ATTIVARE", "tipo": "file", "obbligatorio": true }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME_INTESTATARIO_CONTRATTO", "label": "NOME E COGNOME INTESTATARIO CONTRATTO", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE_INTESTATARIO", "label": "CODICE FISCALE INTESTATARIO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_DI_NASCITA", "label": "DATA DI NASCITA", "tipo": "date", "obbligatorio": true, "pattern": "DD/MM/YYYY" },
+      { "key": "LUOGO_DI_NASCITA", "label": "LUOGO DI NASCITA", "tipo": "text", "obbligatorio": true },
+      { "key": "CAP", "label": "CAP", "tipo": "text", "obbligatorio": true, "lunghezza": 5 },
+      { "key": "CITTA", "label": "CITTA", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_ATTIVAZIONE", "label": "INDIRIZZO E CIVICO ATTIVAZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_DI_RIFERIMENTO", "label": "RECAPITO DI RIFERIMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "EMAIL", "label": "EMAIL", "tipo": "email", "obbligatorio": true },
+      { "key": "IBAN", "label": "IBAN", "tipo": "text", "obbligatorio": false },
+      { "key": "TIPO_DI_DOCUMENTO", "label": "TIPO DI DOCUMENTO", "tipo": "select", "opzioni": ["C.IDENTITA'", "PATENTE", "PASSAPORTO"], "obbligatorio": true },
+      { "key": "NUMERO_DOCUMENTO", "label": "NUMERO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_E_LUOGO_RILASCIO_DOCUMENTO", "label": "DATA E LUOGO RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "ENTE_RILASCIO_DOCUMENTO", "label": "ENTE RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SCADENZA_DOCUMENTO", "label": "SCADENZA DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SERIALE_SIM_DA_ATTIVARE", "label": "SERIALE SIM DA ATTIVARE", "tipo": "text", "obbligatorio": true }
+    ]
+  },
+  {
+    "template": "MOBILE_CONSUMER_NOMNP",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO RAPPR. LEGALE", "tipo": "file", "obbligatorio": true },
+      { "key": "sim", "label": "FOTO SIM NUOVA", "tipo": "file", "obbligatorio": false },
+      { "key": "doc_iban", "label": "DOCUMENTO INTESTATARIO IBAN", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME_INTESTATARIO_CONTRATTO", "label": "NOME E COGNOME INTESTATARIO CONTRATTO", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE_INTESTATARIO", "label": "CODICE FISCALE INTESTATARIO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_DI_NASCITA", "label": "DATA DI NASCITA", "tipo": "date", "obbligatorio": true, "pattern": "DD/MM/YYYY" },
+      { "key": "LUOGO_DI_NASCITA", "label": "LUOGO DI NASCITA", "tipo": "text", "obbligatorio": true },
+      { "key": "CAP", "label": "CAP", "tipo": "text", "obbligatorio": true, "lunghezza": 5 },
+      { "key": "CITTA", "label": "CITTÀ", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_ATTIVAZIONE", "label": "INDIRIZZO E CIVICO ATTIVAZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_DI_RIFERIMENTO", "label": "RECAPITO DI RIFERIMENTO (PER FIRMA DIGITALE)", "tipo": "text", "obbligatorio": true },
+      { "key": "EMAIL", "label": "EMAIL", "tipo": "email", "obbligatorio": true },
+      { "key": "PEC", "label": "PEC", "tipo": "email", "obbligatorio": false },
+      { "key": "INTESTATARIO_METODO_DI_PAGAMENTO", "label": "INTESTATARIO METODO DI PAGAMENTO", "tipo": "text", "obbligatorio": false },
+      { "key": "IBAN", "label": "IBAN", "tipo": "text", "obbligatorio": false },
+      { "key": "TIPO_DI_DOCUMENTO", "label": "TIPO DI DOCUMENTO", "tipo": "select", "opzioni": ["C.IDENTITA'", "PATENTE", "PASSAPORTO"], "obbligatorio": true },
+      { "key": "NUMERO_DOCUMENTO", "label": "NUMERO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_E_LUOGO_RILASCIO_DOCUMENTO", "label": "DATA E LUOGO RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "ENTE_RILASCIO_DOCUMENTO", "label": "ENTE RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SCADENZA_DOCUMENTO", "label": "SCADENZA DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SERIALE_SIM_DA_ATTIVARE", "label": "SERIALE SIM DA ATTIVARE", "tipo": "text", "obbligatorio": true },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "CAMBIO_SIM",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "vecchia_sim", "label": "FOTO VECCHIA SIM", "tipo": "file", "obbligatorio": true }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME_INTESTATARIO_CONTRATTO", "label": "NOME E COGNOME INTESTATARIO CONTRATTO", "tipo": "text", "obbligatorio": true },
+      { "key": "OPERATORE", "label": "OPERATORE", "tipo": "text", "obbligatorio": true },
+      { "key": "SERIALE_SIM_DA_SOSTITUIRE", "label": "SERIALE SIM DA SOSTITUIRE", "tipo": "text", "obbligatorio": false },
+      { "key": "NUOVO_SERIALE_SIM", "label": "NUOVO SERIALE SIM", "tipo": "text", "obbligatorio": true },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "FURTO_SMARRIMENTO",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "denuncia", "label": "DENUNCIA - TUTTE LE PAGINE", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO", "tipo": "file", "obbligatorio": true },
+      { "key": "sim_sostitutiva", "label": "FOTO SIM SOSTITUTIVA", "tipo": "file", "obbligatorio": true }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME_INTESTATARIO_CONTRATTO", "label": "NOME E COGNOME INTESTATARIO CONTRATTO", "tipo": "text", "obbligatorio": true },
+      { "key": "CF_INTESTATARIO", "label": "CF INTESTATARIO", "tipo": "text", "obbligatorio": true },
+      { "key": "TELEFONO", "label": "TELEFONO", "tipo": "text", "obbligatorio": true },
+      { "key": "SERIALE_SIM_SOSTITUTIVA", "label": "SERIALE SIM SOSTITUTIVA", "tipo": "text", "obbligatorio": true },
+      { "key": "TIPO_DOCUMENTO", "label": "DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SCADENZA_DOCUMENTO", "label": "SCADENZA DOCUMENTO", "tipo": "date", "obbligatorio": true },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "CERTIFICAZIONE_INDIRIZZO",
+    "documenti": [
+      { "key": "allegato", "label": "ALLEGATO CERTIFICAZIONE INDIRIZZO", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "CITTA", "label": "CITTA", "tipo": "text", "obbligatorio": true },
+      { "key": "PROVINCIA", "label": "PROVINCIA", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO", "label": "INDIRIZZO", "tipo": "text", "obbligatorio": true },
+      { "key": "CIVICO", "label": "CIVICO", "tipo": "text", "obbligatorio": true },
+      { "key": "CAP", "label": "CAP", "tipo": "text", "obbligatorio": true }
+    ]
+  },
+  {
+    "template": "RILANCIO",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "Modulo", "label": "MODULO RILANCIO", "tipo": "file", "obbligatorio": true },
+      { "key": "Sim", "label": "FOTO VECCHIA SIM", "tipo": "file", "obbligatorio": true }
+    ],
+    "campi": [
+      { "key": "CODICE_FISCALE_CLIENTE", "label": "CODICE_FISCALE_CLIENTE", "tipo": "text", "obbligatorio": true },
+      { "key": "NUMERO_PROVVISORIO_FASTWEB", "label": "NUMERO_PROVVISORIO_FASTWEB", "tipo": "text", "obbligatorio": true }
+    ]
+  },
+  {
+    "template": "NON_ACQUISIBILE",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO CLIENTE", "tipo": "file", "obbligatorio": true },
+      { "key": "ATTESTAZIONE o VISURA CAMERALE", "label": "VISURA o ATTESTAZIONE PARTITA IVA", "tipo": "file", "obbligatorio": true },
+      { "key": "FOTO ERRORE SISTEMA", "label": "FOTO ERRORE SISTEMA", "tipo": "file", "obbligatorio": true },
+      { "key": "VISURA CAMERALE", "label": "VISURA CAMERALE (SE CLIENTE BUSINESS)", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "CODICE FISCALE", "label": "CODICE FISCALE", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO CLIENTE", "label": "RECAPITO CLIENTE", "tipo": "text", "obbligatorio": true },
+      { "key": "EMAIL CLIENTE", "label": "EMAIL CLIENTE", "tipo": "email", "obbligatorio": true },
+      { "key": "IBAN", "label": "IBAN (SE CLIENTE BUSINESS)", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "INFO_PRATICA",
+    "documenti": [
+      { "key": "file_generico", "label": "FILE GENERICO", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "CF_CLIENTE_FASTWEB", "label": "CF CLIENTE FASTWEB", "tipo": "text", "obbligatorio": true },
+      { "key": "DESCRIZIONE", "label": "DESCRIZIONE", "tipo": "text", "obbligatorio": true }
+    ]
+  },
+  {
+    "template": "TV_BUSINESS",
+    "documenti": [
+      { "key": "documento", "label": "DOCUMENTO IDENTITA RAPPRESENTANTE LEGALE", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO RAPPR. LEGALE", "tipo": "file", "obbligatorio": true },
+      { "key": "certificato", "label": "CERTIFICATO ATTRIBUZIONE PARTITA IVA", "tipo": "file", "obbligatorio": true },
+      { "key": "visura", "label": "CERTIFICATO ATTRIBUZIONE PARTITA IVA", "tipo": "file", "obbligatorio": true },
+      { "key": "doc_iban", "label": "VISURA CAMERALE", "tipo": "file", "obbligatorio": true }
+    ],
+    "campi": [
+      { "key": "RAGIONE_SOCIALE_AZIENDA", "label": "RAGIONE SOCIALE", "tipo": "text", "obbligatorio": true },
+      { "key": "PARTITA_IVA", "label": "PARTITA IVA", "tipo": "text", "obbligatorio": true },
+      { "key": "TIPOLOGIA_ATTIVITA", "label": "TIPOLOGIA ATTIVITA", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO", "label": "INDIRIZZO", "tipo": "text", "obbligatorio": true },
+      { "key": "LOCALITA", "label": "LOCALITA'", "tipo": "text", "obbligatorio": true },
+      { "key": "PROVINCIA", "label": "PROVINCIA", "tipo": "text", "obbligatorio": true },
+      { "key": "TELEFONO", "label": "TELEFONO", "tipo": "text", "obbligatorio": true },
+      { "key": "E-MAIL", "label": "E-MAIL", "tipo": "email", "obbligatorio": true },
+      { "key": "PEC", "label": "PEC", "tipo": "email", "obbligatorio": true },
+      { "key": "NOME_E_COGNOME_RAPPRESENTANTE_LEGALE", "label": "NOME E COGNOME RAPPRESENTANTE LEGALE", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE_RAPPRESENTANTE_LEGALE", "label": "CODICE FISCALE RAPPRESENTANTE LEGALE", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_DI_NASCITA", "label": "DATA DI NASCITA", "tipo": "date", "obbligatorio": true, "pattern": "DD/MM/YYYY" },
+      { "key": "LUOGO_DI_NASCITA", "label": "LUOGO DI NASCITA", "tipo": "text", "obbligatorio": true }
+    ]
+  },
+  {
+    "template": "CONVERGENZA_BUSINESS",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO", "tipo": "file", "obbligatorio": true },
+      { "key": "fattura", "label": "FATTURA VECCHIO GESTORE", "tipo": "file", "obbligatorio": false },
+      { "key": "doc_iban", "label": "DOCUMENTO INTESTATARIO IBAN", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME", "label": "NOME E COGNOME", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE", "label": "CODICE FISCALE", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_DI_NASCITA", "label": "DATA DI NASCITA", "tipo": "date", "obbligatorio": true, "pattern": "DD/MM/YYYY" },
+      { "key": "LUOGO_DI_NASCITA", "label": "LUOGO DI NASCITA", "tipo": "text", "obbligatorio": true },
+      { "key": "CAP", "label": "CAP", "tipo": "text", "obbligatorio": true, "lunghezza": 5 },
+      { "key": "CITTA_AZIENDA", "label": "CITTÀ AZIENDA", "tipo": "text", "obbligatorio": true },
+      { "key": "PARTITA_IVA", "label": "PARTITA IVA", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_AZIENDA", "label": "INDIRIZZO E CIVICO AZIENDA", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_ATTIVAZIONE_AZIENDA", "label": "INDIRIZZO E CIVICO ATTIVAZIONE AZIENDA", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_DI_RIFERIMENTO", "label": "RECAPITO DI RIFERIMENTO (PER FIRMA DIGITALE)", "tipo": "text", "obbligatorio": true },
+      { "key": "EMAIL_AZIENDA", "label": "EMAIL AZIENDA", "tipo": "email", "obbligatorio": true, "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$" },
+      { "key": "PEC", "label": "PEC", "tipo": "email", "obbligatorio": false },
+      { "key": "INTESTATARIO_METODO_DI_PAGAMENTO", "label": "INTESTATARIO METODO DI PAGAMENTO", "tipo": "text", "obbligatorio": false },
+      { "key": "IBAN", "label": "IBAN", "tipo": "text", "obbligatorio": false, "lunghezza": 27 },
+      { "key": "TIPO_DI_DOCUMENTO", "label": "TIPO DI DOCUMENTO", "tipo": "select", "opzioni": ["C.IDENTITA'", "PATENTE", "PASSAPORTO"], "obbligatorio": true },
+      { "key": "NUMERO_DOCUMENTO", "label": "NUMERO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_E_LUOGO_RILASCIO_DOCUMENTO", "label": "DATA E LUOGO RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "ENTE_RILASCIO_DOCUMENTO", "label": "ENTE RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SCADENZA_DOCUMENTO", "label": "SCADENZA DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_DI_MIGRAZIONE_1", "label": "CODICE DI MIGRAZIONE", "tipo": "text", "obbligatorio": false },
+      { "key": "GESTORE_DI_PROVENIENZA", "label": "GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM1_NUMERO_DA_PASSARE", "label": "SIM 1: NUMERO DA PASSARE", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM1_GESTORE_DI_PROVENIENZA", "label": "SIM 1: GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM1_SERIALE_SIM_DA_ATTIVARE", "label": "SIM 1: SERIALE SIM DA ATTIVARE", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM2_NUMERO_DA_PASSARE", "label": "SIM 2: NUMERO DA PASSARE", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM2_GESTORE_DI_PROVENIENZA", "label": "SIM 2: GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM2_SERIALE_SIM_DA_ATTIVARE", "label": "SIM 2: SERIALE SIM DA ATTIVARE", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM3_NUMERO_DA_PASSARE", "label": "SIM 3: NUMERO DA PASSARE", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM3_GESTORE_DI_PROVENIENZA", "label": "SIM 3: GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM3_SERIALE_SIM_DA_ATTIVARE", "label": "SIM 3: SERIALE SIM DA ATTIVARE", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM4_NUMERO_DA_PASSARE", "label": "SIM 4: NUMERO DA PASSARE", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM4_GESTORE_DI_PROVENIENZA", "label": "SIM 4: GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM4_SERIALE_SIM_DA_ATTIVARE", "label": "SIM 4: SERIALE SIM DA ATTIVARE", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM5_NUMERO_DA_PASSARE", "label": "SIM 5: NUMERO DA PASSARE", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM5_GESTORE_DI_PROVENIENZA", "label": "SIM 5: GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM5_SERIALE_SIM_DA_ATTIVARE", "label": "SIM 5: SERIALE SIM DA ATTIVARE", "tipo": "text", "obbligatorio": false },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "CONVERGENZA_CONSUMER",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO", "tipo": "file", "obbligatorio": true },
+      { "key": "fattura", "label": "FATTURA VECCHIO GESTORE", "tipo": "file", "obbligatorio": false },
+      { "key": "vecchia_sim1", "label": "FOTO SIM VECCHIA 1", "tipo": "file", "obbligatorio": false },
+      { "key": "nuova_sim1", "label": "FOTO SIM NUOVA 1", "tipo": "file", "obbligatorio": false },
+      { "key": "vecchia_sim2", "label": "FOTO SIM VECCHIA 2", "tipo": "file", "obbligatorio": false },
+      { "key": "nuova_sim2", "label": "FOTO SIM NUOVA 2", "tipo": "file", "obbligatorio": false },
+      { "key": "vecchia_sim3", "label": "FOTO SIM VECCHIA 3", "tipo": "file", "obbligatorio": false },
+      { "key": "nuova_sim3", "label": "FOTO SIM NUOVA 3", "tipo": "file", "obbligatorio": false },
+      { "key": "vecchia_sim4", "label": "FOTO SIM VECCHIA 4", "tipo": "file", "obbligatorio": false },
+      { "key": "nuova_sim4", "label": "FOTO SIM NUOVA 4", "tipo": "file", "obbligatorio": false },
+      { "key": "vecchia_sim5", "label": "FOTO SIM VECCHIA 5", "tipo": "file", "obbligatorio": false },
+      { "key": "nuova_sim5", "label": "FOTO SIM NUOVA 5", "tipo": "file", "obbligatorio": false },
+      { "key": "doc_iban", "label": "DOCUMENTO INTESTATARIO IBAN", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME", "label": "NOME E COGNOME", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE", "label": "CODICE FISCALE", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_DI_NASCITA", "label": "DATA DI NASCITA", "tipo": "date", "obbligatorio": true, "pattern": "DD/MM/YYYY" },
+      { "key": "LUOGO_DI_NASCITA", "label": "LUOGO DI NASCITA", "tipo": "text", "obbligatorio": true },
+      { "key": "CAP", "label": "CAP", "tipo": "text", "obbligatorio": true, "lunghezza": 5 },
+      { "key": "CITTA", "label": "CITTÀ", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_E_CIVICO_ATTIVAZIONE", "label": "INDIRIZZO E CIVICO ATTIVAZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_DI_RIFERIMENTO", "label": "RECAPITO DI RIFERIMENTO (PER FIRMA DIGITALE)", "tipo": "text", "obbligatorio": true },
+      { "key": "EMAIL", "label": "EMAIL", "tipo": "email", "obbligatorio": true, "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$" },
+      { "key": "PEC", "label": "PEC", "tipo": "email", "obbligatorio": false },
+      { "key": "INTESTATARIO_METODO_DI_PAGAMENTO", "label": "INTESTATARIO METODO DI PAGAMENTO", "tipo": "text", "obbligatorio": false },
+      { "key": "IBAN", "label": "IBAN", "tipo": "text", "obbligatorio": false, "lunghezza": 27 },
+      { "key": "TIPO_DI_DOCUMENTO", "label": "TIPO DI DOCUMENTO", "tipo": "select", "opzioni": ["C.IDENTITA'", "PATENTE", "PASSAPORTO"], "obbligatorio": true },
+      { "key": "NUMERO_DOCUMENTO", "label": "NUMERO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_E_LUOGO_RILASCIO_DOCUMENTO", "label": "DATA E LUOGO RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "ENTE_RILASCIO_DOCUMENTO", "label": "ENTE RILASCIO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SCADENZA_DOCUMENTO", "label": "SCADENZA DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_DI_MIGRAZIONE_1", "label": "CODICE DI MIGRAZIONE", "tipo": "text", "obbligatorio": false },
+      { "key": "GESTORE_DI_PROVENIENZA", "label": "GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM1_NUMERO_DA_PASSARE", "label": "SIM 1: NUMERO DA PASSARE", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM1_GESTORE_DI_PROVENIENZA", "label": "SIM 1: GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM1_SERIALE_SIM_DA_ATTIVARE", "label": "SIM 1: SERIALE SIM DA ATTIVARE", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM2_NUMERO_DA_PASSARE", "label": "SIM 2: NUMERO DA PASSARE", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM2_GESTORE_DI_PROVENIENZA", "label": "SIM 2: GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM2_SERIALE_SIM_DA_ATTIVARE", "label": "SIM 2: SERIALE SIM DA ATTIVARE", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM3_NUMERO_DA_PASSARE", "label": "SIM 3: NUMERO DA PASSARE", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM3_GESTORE_DI_PROVENIENZA", "label": "SIM 3: GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM3_SERIALE_SIM_DA_ATTIVARE", "label": "SIM 3: SERIALE SIM DA ATTIVARE", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM4_NUMERO_DA_PASSARE", "label": "SIM 4: NUMERO DA PASSARE", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM4_GESTORE_DI_PROVENIENZA", "label": "SIM 4: GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM4_SERIALE_SIM_DA_ATTIVARE", "label": "SIM 4: SERIALE SIM DA ATTIVARE", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM5_NUMERO_DA_PASSARE", "label": "SIM 5: NUMERO DA PASSARE", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM5_GESTORE_DI_PROVENIENZA", "label": "SIM 5: GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": false },
+      { "key": "SIM5_SERIALE_SIM_DA_ATTIVARE", "label": "SIM 5: SERIALE SIM DA ATTIVARE", "tipo": "text", "obbligatorio": false },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "ENERGIA_CONSUMER_WEEDOO",
+    "documenti": [
+      { "key": "modulo_compilato", "label": "ALLEGA MODELLO COMPILATO", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera_sanitaria", "label": "ALLEGA TESSERA SANITARIA CLIENTE", "tipo": "file", "obbligatorio": true },
+      { "key": "contratto_vecchio", "label": "ALLEGA CONTRATTO VECCHIO FORNITORE", "tipo": "file", "obbligatorio": true }
+    ],
+    "campi": [],
+    "downloadUrl": "https://kimweb.agency/wp-content/uploads/BOT/contratto_weedoo.pdf",
+    "downloadLabel": "Scarica il modulo da firmare",
+    "istruzioni": "Scarica il modulo, compilalo a mano, scansionalo e allegalo insieme agli altri documenti richiesti."
+  },
+  {
+  "template": "ENERGIA_CONSUMER_ENI",
+  "documenti": [
+    { "key": "modulo_firmato", "label": "ALLEGA MODELLO FIRMATO", "tipo": "file", "obbligatorio": true },
+    { "key": "cte_firmata_luce_gas", "label": "ALLEGA CTE FIRMATA (LUCE-GAS)", "tipo": "file", "obbligatorio": true },
+    { "key": "tessera_sanitaria", "label": "ALLEGA TESSERA SANITARIA CLIENTE", "tipo": "file", "obbligatorio": true },
+    { "key": "documento_identita_intestatario", "label": "DOCUMENTO DI IDENTITA' INTESTATARIO", "tipo": "file", "obbligatorio": true },
+    { "key": "ultima_fattura_fornitore", "label": "ULTIMA FATTURA FORNITORE USCENTE", "tipo": "file", "obbligatorio": true }
+  ],
+  "campi": [
+    { "key": "cognome_nome", "label": "Cognome e Nome ", "tipo": "text", "obbligatorio": true },
+    { "key": "codice_fiscale", "label": "Codice Fiscale ", "tipo": "text", "obbligatorio": true },
+    { "key": "tipo_documento", "label": "Tipo documento", "tipo": "select", "opzioni": ["Carta d'Identità", "Patente", "Passaporto"], "obbligatorio": true },
+    { "key": "numero_documento", "label": "Numero documento", "tipo": "text", "obbligatorio": true },
+    { "key": "data_rilascio_documento", "label": "Data rilascio documento", "tipo": "date", "obbligatorio": true },
+    { "key": "ente_rilascio_documento", "label": "Ente rilascio documento", "tipo": "text", "obbligatorio": true },
+    { "key": "indirizzo_residenza", "label": "Indirizzo di residenza ", "tipo": "text", "obbligatorio": true },
+    { "key": "cap", "label": "CAP", "tipo": "text", "obbligatorio": true },
+    { "key": "comune", "label": "Comune", "tipo": "text", "obbligatorio": true },
+    { "key": "provincia", "label": "Provincia", "tipo": "text", "obbligatorio": true },
+    { "key": "telefono", "label": "Telefono fisso / mobile", "tipo": "text", "obbligatorio": false },
+    { "key": "email", "label": "Email", "tipo": "email", "obbligatorio": false },
+    { "key": "pec", "label": "PEC (facoltativo)", "tipo": "email", "obbligatorio": false },
+    { "key": "indirizzo_corrispondenza", "label": "Indirizzo per corrispondenza (se diverso)", "tipo": "text", "obbligatorio": false },
+
+    { "key": "tipo_contratto", "label": "Tipo contratto", "tipo": "select", "opzioni": ["Switch", "Switch con Voltura", "Subentro", "Nuovo allaccio"], "obbligatorio": true },
+    { "key": "pod", "label": "POD (energia elettrica)", "tipo": "text", "obbligatorio": false },
+    { "key": "pdr", "label": "PDR (gas)", "tipo": "text", "obbligatorio": false },
+    { "key": "indirizzo_fornitura", "label": "Indirizzo punto di fornitura", "tipo": "text", "obbligatorio": true },
+    { "key": "comune_fornitura", "label": "Comune punto di fornitura", "tipo": "text", "obbligatorio": true },
+    { "key": "provincia_fornitura", "label": "Provincia punto di fornitura", "tipo": "text", "obbligatorio": true },
+    { "key": "cap_fornitura", "label": "CAP punto di fornitura", "tipo": "text", "obbligatorio": true },
+    { "key": "potenza_impegnata", "label": "Potenza impegnata (kW)", "tipo": "number", "obbligatorio": false },
+    { "key": "uso_domestico", "label": "Uso domestico / non domestico", "tipo": "select", "opzioni": ["Domestico", "Non domestico"], "obbligatorio": true },
+    { "key": "tipologia_abitazione", "label": "Tipologia abitazione", "tipo": "select", "opzioni": ["Residenza", "Non residenza"], "obbligatorio": true },
+
+    { "key": "intestazione_fattura", "label": "Intestazione fattura (se diversa)", "tipo": "text", "obbligatorio": false },
+    { "key": "indirizzo_fattura", "label": "Indirizzo invio fattura", "tipo": "text", "obbligatorio": false },
+    { "key": "email_fattura", "label": "Email invio fattura", "tipo": "email", "obbligatorio": false },
+    { "key": "modalita_fattura", "label": "Modalità di ricezione fattura", "tipo": "select", "opzioni": ["Digitale", "Cartacea"], "obbligatorio": true },
+    { "key": "modalita_pagamento", "label": "Modalità di pagamento", "tipo": "select", "opzioni": ["RID bancario", "Bollettino", "Altro"], "obbligatorio": true },
+    { "key": "iban", "label": "IBAN (in caso di RID)", "tipo": "text", "obbligatorio": false },
+    { "key": "intestatario_conto", "label": "Intestatario conto", "tipo": "text", "obbligatorio": false },
+
+    { "key": "fornitore_attuale", "label": "Nome fornitore attuale", "tipo": "text", "obbligatorio": false }
+  ],
+  "downloadUrl": "https://contrattistation.s3.eu-west-1.amazonaws.com/Documentazione/ENIPLENITUDE/1.2.10_11_PROPOSTA+SWI+RESIDENTIAL+-+vers.+A_B+(1).pdf",
+  "downloadLabel": "Scarica il modulo da firmare",
+  "downloadUrl2": "https://contrattistation.s3.eu-west-1.amazonaws.com/Documentazione/ENIPLENITUDE/FIXA+LUCE-GAS.pdf",
+  "downloadLabel2": "Scarica la CTE da Firmare",
+  "istruzioni": "Scarica il modulo e fallo SOLO firmare al cliente NON E' NECESSARIO COMPILARE (3 firme obbligatorie + 2 firme facoltative). Scansiona il modulo firmato e allegalo insieme agli altri documenti richiesti. ATTENZIONE INSERISCI SOLO LA PAGINA FIRMATA DELLA CTE.",
+  "firmeGuida": [
+    { "url": "https://contrattistation.s3.eu-west-1.amazonaws.com/Documentazione/ENIPLENITUDE/Esempio_Firma1.jpg", "label": "Pagina 1 - Firme obbligatorie" },
+    { "url": "https://contrattistation.s3.eu-west-1.amazonaws.com/Documentazione/ENIPLENITUDE/Esempio_Firma2.jpg.jpg", "label": "Pagina 2 - Firme facoltative" }
+  ]
+},
+  {
+    "template": "ENERGIA_BUSINESS_LUCE_ENI",
+    "documenti": [
+      { "key": "modulo_firmato", "label": "ALLEGA MODELLO FIRMATO (SWITCH BUSINESS POWER)", "tipo": "file", "obbligatorio": true },
+      { "key": "cte_firmata", "label": "ALLEGA CTE FIRMATA (FIXA BUSINESS LUCE o GAS)", "tipo": "file", "obbligatorio": true },
+      { "key": "documento_legale", "label": "DOCUMENTO LEGALE RAPPRESENTANTE", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera_sanitaria_legale", "label": "TESSERA SANITARIA LEGALE RAPPRESENTANTE", "tipo": "file", "obbligatorio": true },
+      { "key": "visura_camerale", "label": "ALLEGA VISURA CAMERALE AGGIORNATA", "tipo": "file", "obbligatorio": true },
+      { "key": "bolletta_precedente", "label": "ULTIMA FATTURA FORNITORE USCENTE", "tipo": "file", "obbligatorio": true }
+    ],
+    "campi": [
+      { "key": "ragione_sociale", "label": "Ragione sociale / Denominazione azienda", "tipo": "text", "obbligatorio": true },
+      { "key": "codice_fiscale_piva", "label": "Codice Fiscale / Partita IVA", "tipo": "text", "obbligatorio": true },
+      { "key": "indirizzo_sede_legale", "label": "Indirizzo sede legale", "tipo": "text", "obbligatorio": true },
+      { "key": "cap_sede_legale", "label": "CAP sede legale", "tipo": "text", "obbligatorio": true },
+      { "key": "comune_sede_legale", "label": "Comune sede legale", "tipo": "text", "obbligatorio": true },
+      { "key": "provincia_sede_legale", "label": "Provincia sede legale", "tipo": "text", "obbligatorio": true },
+      { "key": "telefono", "label": "Telefono / Cellulare", "tipo": "text", "obbligatorio": false },
+      { "key": "email", "label": "Email", "tipo": "email", "obbligatorio": false },
+      { "key": "pec", "label": "PEC (facoltativo)", "tipo": "email", "obbligatorio": false },
+      { "key": "referente", "label": "Referente aziendale", "tipo": "text", "obbligatorio": false },
+      { "key": "ruolo_referente", "label": "Ruolo referente (titolare, amministratore, ecc.)", "tipo": "text", "obbligatorio": false },
+
+      { "key": "pod", "label": "POD (Punto di Prelievo)", "tipo": "text", "obbligatorio": true },
+      { "key": "indirizzo_fornitura", "label": "Indirizzo punto di fornitura", "tipo": "text", "obbligatorio": true },
+      { "key": "comune_fornitura", "label": "Comune punto di fornitura", "tipo": "text", "obbligatorio": true },
+      { "key": "provincia_fornitura", "label": "Provincia punto di fornitura", "tipo": "text", "obbligatorio": true },
+      { "key": "cap_fornitura", "label": "CAP punto di fornitura", "tipo": "text", "obbligatorio": true },
+      { "key": "codice_offerta", "label": "Codice offerta / contratto", "tipo": "text", "obbligatorio": true },
+      { "key": "potenza_impegnata", "label": "Potenza impegnata (kW)", "tipo": "number", "obbligatorio": false },
+      { "key": "tipo_operazione", "label": "Tipo operazione", "tipo": "select", "opzioni": ["Switch", "Switch con Voltura", "Subentro", "Nuovo allaccio"], "obbligatorio": true },
+      { "key": "tipologia_uso", "label": "Tipologia uso fornitura", "tipo": "select", "opzioni": ["Aziendale", "Artigianale", "Professionale", "Altro"], "obbligatorio": true },
+      { "key": "tensione_fornitura", "label": "Tensione di fornitura", "tipo": "select", "opzioni": ["BT", "MT"], "obbligatorio": false },
+      { "key": "consumo_annuo", "label": "Consumo annuo stimato (kWh)", "tipo": "number", "obbligatorio": false },
+      { "key": "data_inizio_fornitura", "label": "Data inizio fornitura richiesta", "tipo": "date", "obbligatorio": false },
+
+      { "key": "fornitore_attuale", "label": "Nome attuale fornitore", "tipo": "text", "obbligatorio": true },
+      { "key": "codice_cliente_prec", "label": "Codice cliente / Numero contratto precedente", "tipo": "text", "obbligatorio": false },
+      { "key": "data_ultima_bolletta", "label": "Data ultima bolletta / lettura", "tipo": "date", "obbligatorio": false },
+      { "key": "consumo_medio_annuo", "label": "Consumo medio annuo (Smc o kWh)", "tipo": "number", "obbligatorio": false },
+
+      { "key": "intestatario_conto", "label": "Intestatario conto corrente", "tipo": "text", "obbligatorio": true },
+      { "key": "iban", "label": "IBAN", "tipo": "text", "obbligatorio": true },
+      { "key": "banca", "label": "Banca / Istituto di credito", "tipo": "text", "obbligatorio": false },
+      { "key": "email_sepa", "label": "Email per notifiche SEPA (facoltativa)", "tipo": "email", "obbligatorio": false },
+      { "key": "autorizzazione_sepa", "label": "Autorizzazione ad addebito SEPA Direct Debit (SDD)", "tipo": "checkbox", "obbligatorio": true }
+    ],
+    "downloadUrl": "https://contrattistation.s3.eu-west-1.amazonaws.com/Documentazione/ENIPLENITUDE/SWITCH+business_power.pdf",
+    "downloadLabel": "Scarica il modulo da firmare",
+    "downloadUrl2": "https://contrattistation.s3.eu-west-1.amazonaws.com/Documentazione/ENIPLENITUDE/FIXA+BUSINESS+LUCE.pdf",
+    "downloadLabel2": "Scarica la CTE da Firmare",
+    "istruzioni": "Scarica il modulo e fallo SOLO firmare al legale rappresentante NON E' NECESSARIO COMPILARE (3 firme obbligatorie: contratto, privacy, SEPA). Scansiona il documento firmato e allegalo insieme agli altri documenti richiesti (documento identità, visura, bolletta, CTE).",
+    "firmeGuida": [
+      { "url": "https://contrattistation.s3.eu-west-1.amazonaws.com/Documentazione/ENIPLENITUDE/Esempio_Firma1.jpg", "label": "Pagina 1 - Firme obbligatorie" },
+      { "url": "https://contrattistation.s3.eu-west-1.amazonaws.com/Documentazione/ENIPLENITUDE/Esempio_Firma2.jpg.jpg", "label": "Pagina 2 - Firme facoltative" }
+    ]
+  },
+  {
+    "template": "ENERGIA_BUSINESS_GAS_ENI",
+    "documenti": [
+      { "key": "modulo_firmato", "label": "ALLEGA MODELLO FIRMATO (SWITCH BUSINESS GAS)", "tipo": "file", "obbligatorio": true },
+      { "key": "cte_firmata", "label": "ALLEGA CTE FIRMATA (FIXA BUSINESS GAS)", "tipo": "file", "obbligatorio": true },
+      { "key": "documento_legale", "label": "DOCUMENTO LEGALE RAPPRESENTANTE", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera_sanitaria_legale", "label": "TESSERA SANITARIA LEGALE RAPPRESENTANTE", "tipo": "file", "obbligatorio": true },
+      { "key": "visura_camerale", "label": "ALLEGA VISURA CAMERALE AGGIORNATA", "tipo": "file", "obbligatorio": true },
+      { "key": "bolletta_precedente", "label": "ULTIMA FATTURA FORNITORE USCENTE", "tipo": "file", "obbligatorio": true }
+    ],
+    "campi": [
+      { "key": "ragione_sociale", "label": "Ragione sociale / Denominazione azienda", "tipo": "text", "obbligatorio": true },
+      { "key": "codice_fiscale_piva", "label": "Codice Fiscale / Partita IVA", "tipo": "text", "obbligatorio": true },
+      { "key": "indirizzo_sede_legale", "label": "Indirizzo sede legale", "tipo": "text", "obbligatorio": true },
+      { "key": "cap_sede_legale", "label": "CAP sede legale", "tipo": "text", "obbligatorio": true },
+      { "key": "comune_sede_legale", "label": "Comune sede legale", "tipo": "text", "obbligatorio": true },
+      { "key": "provincia_sede_legale", "label": "Provincia sede legale", "tipo": "text", "obbligatorio": true },
+      { "key": "telefono", "label": "Telefono / Cellulare", "tipo": "text", "obbligatorio": false },
+      { "key": "email", "label": "Email", "tipo": "email", "obbligatorio": false },
+      { "key": "pec", "label": "PEC (facoltativo)", "tipo": "email", "obbligatorio": false },
+      { "key": "referente", "label": "Referente aziendale", "tipo": "text", "obbligatorio": false },
+      { "key": "ruolo_referente", "label": "Ruolo referente (titolare, amministratore, ecc.)", "tipo": "text", "obbligatorio": false },
+
+      { "key": "pdr", "label": "PDR (Punto di Riconsegna)", "tipo": "text", "obbligatorio": true },
+      { "key": "indirizzo_fornitura", "label": "Indirizzo punto di fornitura", "tipo": "text", "obbligatorio": true },
+      { "key": "comune_fornitura", "label": "Comune punto di fornitura", "tipo": "text", "obbligatorio": true },
+      { "key": "provincia_fornitura", "label": "Provincia punto di fornitura", "tipo": "text", "obbligatorio": true },
+      { "key": "cap_fornitura", "label": "CAP punto di fornitura", "tipo": "text", "obbligatorio": true },
+      { "key": "codice_offerta", "label": "Codice offerta / contratto", "tipo": "text", "obbligatorio": true },
+      { "key": "tipo_operazione", "label": "Tipo operazione", "tipo": "select", "opzioni": ["Switch da altro fornitore", "Voltura", "Nuova attivazione"], "obbligatorio": true },
+      { "key": "consumo_annuo", "label": "Consumo annuo stimato (Smc)", "tipo": "number", "obbligatorio": false },
+      { "key": "uso_fornitura", "label": "Uso fornitura", "tipo": "select", "opzioni": ["Aziendale", "Artigianale", "Professionale", "Altro"], "obbligatorio": true },
+      { "key": "data_inizio_fornitura", "label": "Data inizio fornitura richiesta", "tipo": "date", "obbligatorio": false },
+
+      { "key": "fornitore_attuale", "label": "Nome attuale fornitore", "tipo": "text", "obbligatorio": true },
+      { "key": "codice_cliente_prec", "label": "Codice cliente / Numero contratto precedente", "tipo": "text", "obbligatorio": false },
+      { "key": "data_ultima_bolletta", "label": "Data ultima bolletta / lettura", "tipo": "date", "obbligatorio": false },
+      { "key": "consumo_medio_annuo", "label": "Consumo medio annuo (Smc o kWh)", "tipo": "number", "obbligatorio": false },
+
+      { "key": "intestatario_conto", "label": "Intestatario conto corrente", "tipo": "text", "obbligatorio": true },
+      { "key": "iban", "label": "IBAN", "tipo": "text", "obbligatorio": true },
+      { "key": "banca", "label": "Banca / Istituto di credito", "tipo": "text", "obbligatorio": false },
+      { "key": "email_sepa", "label": "Email per notifiche SEPA (facoltativa)", "tipo": "email", "obbligatorio": false },
+      { "key": "autorizzazione_sepa", "label": "Autorizzazione ad addebito SEPA Direct Debit (SDD)", "tipo": "checkbox", "obbligatorio": true }
+    ],
+    "downloadUrl": "https://kimweb.agency/wp-content/uploads/BOT/SWITCH_business_gas.pdf",
+    "downloadLabel": "Scarica il modulo da firmare",
+    "downloadUrl2": "https://contrattistation.s3.eu-west-1.amazonaws.com/Documentazione/ENIPLENITUDE/SWITCH+business_gas.pdf",
+    "downloadLabel2": "Scarica la CTE da Firmare",
+    "istruzioni": "Scarica il modulo e fallo SOLO firmare al legale rappresentante NON E' NECESSARIO COMPILARE (3 firme obbligatorie: contratto, privacy, SEPA). Scansiona il documento firmato e allegalo insieme agli altri documenti richiesti (documento identità, visura, bolletta, CTE).",
+    "firmeGuida": [
+      { "url": "https://contrattistation.s3.eu-west-1.amazonaws.com/Documentazione/ENIPLENITUDE/Esempio_Firma1.jpg", "label": "Pagina 1 - Firme obbligatorie" },
+      { "url": "https://contrattistation.s3.eu-west-1.amazonaws.com/Documentazione/ENIPLENITUDE/Esempio_Firma2.jpg.jpg", "label": "Pagina 2 - Firme facoltative" }
+    ]
+  },
+  {
+    "template": "ENERGIA_CONSUMER_TUTELATI_ENI",
+    "documenti": [
+      { "key": "modulo_firmato", "label": "ALLEGA MODELLO FIRMATO", "tipo": "file", "obbligatorio": true },
+      { "key": "cte_firmata_luce_gas", "label": "ALLEGA CTE FIRMATA TUTELATI", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera_sanitaria", "label": "ALLEGA TESSERA SANITARIA CLIENTE", "tipo": "file", "obbligatorio": true },
+      { "key": "documento_identita_intestatario", "label": "DOCUMENTO DI IDENTITA' INTESTATARIO", "tipo": "file", "obbligatorio": true },
+      { "key": "ultima_fattura_fornitore", "label": "ULTIMA FATTURA FORNITORE USCENTE", "tipo": "file", "obbligatorio": true }
+    ],
+    "campi": [
+      { "key": "cognome_nome", "label": "Cognome e Nome", "tipo": "text", "obbligatorio": true },
+      { "key": "codice_fiscale", "label": "Codice Fiscale", "tipo": "text", "obbligatorio": true },
+      { "key": "tipo_documento", "label": "Tipo documento", "tipo": "select", "opzioni": ["Carta d'Identità", "Patente", "Passaporto"], "obbligatorio": true },
+      { "key": "numero_documento", "label": "Numero documento", "tipo": "text", "obbligatorio": true },
+      { "key": "data_rilascio_documento", "label": "Data rilascio documento", "tipo": "date", "obbligatorio": true },
+      { "key": "ente_rilascio_documento", "label": "Ente rilascio documento", "tipo": "text", "obbligatorio": true },
+      { "key": "indirizzo_residenza", "label": "Indirizzo di residenza / sede legale", "tipo": "text", "obbligatorio": true },
+      { "key": "cap", "label": "CAP", "tipo": "text", "obbligatorio": true },
+      { "key": "comune", "label": "Comune", "tipo": "text", "obbligatorio": true },
+      { "key": "provincia", "label": "Provincia", "tipo": "text", "obbligatorio": true },
+      { "key": "telefono", "label": "Telefono fisso / mobile", "tipo": "text", "obbligatorio": false },
+      { "key": "email", "label": "Email", "tipo": "email", "obbligatorio": false },
+      { "key": "pec", "label": "PEC (facoltativo)", "tipo": "email", "obbligatorio": false },
+      { "key": "indirizzo_corrispondenza", "label": "Indirizzo per corrispondenza (se diverso)", "tipo": "text", "obbligatorio": false },
+
+      { "key": "pod", "label": "POD (energia elettrica)", "tipo": "text", "obbligatorio": false },
+      { "key": "pdr", "label": "PDR (gas)", "tipo": "text", "obbligatorio": false },
+      { "key": "indirizzo_fornitura", "label": "Indirizzo punto di fornitura", "tipo": "text", "obbligatorio": true },
+      { "key": "comune_fornitura", "label": "Comune punto di fornitura", "tipo": "text", "obbligatorio": true },
+      { "key": "provincia_fornitura", "label": "Provincia punto di fornitura", "tipo": "text", "obbligatorio": true },
+      { "key": "cap_fornitura", "label": "CAP punto di fornitura", "tipo": "text", "obbligatorio": true },
+      { "key": "potenza_impegnata", "label": "Potenza impegnata (kW)", "tipo": "number", "obbligatorio": false },
+      { "key": "uso_domestico", "label": "Uso domestico / non domestico", "tipo": "select", "opzioni": ["Domestico", "Non domestico"], "obbligatorio": true },
+      { "key": "tipologia_abitazione", "label": "Tipologia abitazione", "tipo": "select", "opzioni": ["Residenza", "Non residenza"], "obbligatorio": true },
+
+      { "key": "intestazione_fattura", "label": "Intestazione fattura (se diversa)", "tipo": "text", "obbligatorio": false },
+      { "key": "indirizzo_fattura", "label": "Indirizzo invio fattura", "tipo": "text", "obbligatorio": false },
+      { "key": "email_fattura", "label": "Email invio fattura", "tipo": "email", "obbligatorio": false },
+      { "key": "modalita_fattura", "label": "Modalità di ricezione fattura", "tipo": "select", "opzioni": ["Digitale", "Cartacea"], "obbligatorio": true },
+      { "key": "modalita_pagamento", "label": "Modalità di pagamento", "tipo": "select", "opzioni": ["RID bancario", "Bollettino", "Altro"], "obbligatorio": true },
+      { "key": "iban", "label": "IBAN (in caso di RID)", "tipo": "text", "obbligatorio": false },
+      { "key": "intestatario_conto", "label": "Intestatario conto", "tipo": "text", "obbligatorio": false },
+
+      { "key": "fornitore_attuale", "label": "Nome fornitore attuale", "tipo": "text", "obbligatorio": false }
+    ],
+    "downloadUrl": "https://kimweb.agency/wp-content/uploads/BOT/PROPOSTA_SWI_RESIDENTIAL.pdf",
+    "downloadLabel": "Scarica il modulo da firmare",
+    "downloadUrl2": "https://contrattistation.s3.eu-west-1.amazonaws.com/Documentazione/ENIPLENITUDE/1.2.10_11_PROPOSTA+SWI+RESIDENTIAL+-+vers.+A_B+(1).pdf",
+    "downloadLabel2": "Scarica la CTE da Firmare",
+    "istruzioni": "Scarica il modulo e fallo SOLO firmare al cliente NON E' NECESSARIO COMPILARE (3 firme obbligatorie + 2 firme facoltative). Scansiona il modulo firmato e allegalo insieme agli altri documenti richiesti. ATTENZIONE INSERISCI SOLO LA PAGINA FIRMATA DELLA CTE.",
+    "firmeGuida": [
+      { "url": "https://contrattistation.s3.eu-west-1.amazonaws.com/Documentazione/ENIPLENITUDE/Esempio_Firma1.jpg", "label": "Pagina 1 - Firme obbligatorie" },
+      { "url": "https://contrattistation.s3.eu-west-1.amazonaws.com/Documentazione/ENIPLENITUDE/Esempio_Firma2.jpg.jpg", "label": "Pagina 2 - Firme facoltative" }
+    ]
+  },
+  {
+    "template": "ENERGIA_CONSUMER_PERTINENZE_ENI",
+    "documenti": [
+      { "key": "modulo_compilato", "label": "ALLEGA MODELLO COMPILATO", "tipo": "file", "obbligatorio": true },
+      { "key": "cte_firmata_luce_gas", "label": "ALLEGA CTE FIRMATA (LUCE-GAS)", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera_sanitaria", "label": "ALLEGA TESSERA SANITARIA CLIENTE", "tipo": "file", "obbligatorio": true },
+      { "key": "documento_identita_intestatario", "label": "DOCUMENTO DI IDENTITA' INTESTATARIO", "tipo": "file", "obbligatorio": true },
+      { "key": "ultima_fattura_fornitore", "label": "ULTIMA FATTURA FORNITORE USCENTE", "tipo": "file", "obbligatorio": true }
+    ],
+    "campi": [
+      { "key": "cognome_nome", "label": "Cognome e Nome / Ragione Sociale", "tipo": "text", "obbligatorio": true },
+      { "key": "codice_fiscale", "label": "Codice Fiscale / Partita IVA", "tipo": "text", "obbligatorio": true },
+      { "key": "tipo_documento", "label": "Tipo documento", "tipo": "select", "opzioni": ["Carta d'Identità", "Patente", "Passaporto"], "obbligatorio": true },
+      { "key": "numero_documento", "label": "Numero documento", "tipo": "text", "obbligatorio": true },
+      { "key": "data_rilascio_documento", "label": "Data rilascio documento", "tipo": "date", "obbligatorio": true },
+      { "key": "ente_rilascio_documento", "label": "Ente rilascio documento", "tipo": "text", "obbligatorio": true },
+      { "key": "indirizzo_residenza", "label": "Indirizzo di residenza / sede legale", "tipo": "text", "obbligatorio": true },
+      { "key": "cap", "label": "CAP", "tipo": "text", "obbligatorio": true },
+      { "key": "comune", "label": "Comune", "tipo": "text", "obbligatorio": true },
+      { "key": "provincia", "label": "Provincia", "tipo": "text", "obbligatorio": true },
+      { "key": "telefono", "label": "Telefono fisso / mobile", "tipo": "text", "obbligatorio": false },
+      { "key": "email", "label": "Email", "tipo": "email", "obbligatorio": false },
+      { "key": "pec", "label": "PEC (facoltativo)", "tipo": "email", "obbligatorio": false },
+      { "key": "indirizzo_corrispondenza", "label": "Indirizzo per corrispondenza (se diverso)", "tipo": "text", "obbligatorio": false },
+
+      { "key": "pod", "label": "POD (energia elettrica)", "tipo": "text", "obbligatorio": false },
+      { "key": "pdr", "label": "PDR (gas)", "tipo": "text", "obbligatorio": false },
+      { "key": "indirizzo_fornitura", "label": "Indirizzo punto di fornitura", "tipo": "text", "obbligatorio": true },
+      { "key": "comune_fornitura", "label": "Comune punto di fornitura", "tipo": "text", "obbligatorio": true },
+      { "key": "provincia_fornitura", "label": "Provincia punto di fornitura", "tipo": "text", "obbligatorio": true },
+      { "key": "cap_fornitura", "label": "CAP punto di fornitura", "tipo": "text", "obbligatorio": true },
+      { "key": "potenza_impegnata", "label": "Potenza impegnata (kW)", "tipo": "number", "obbligatorio": false },
+      { "key": "uso_domestico", "label": "Uso domestico / non domestico", "tipo": "select", "opzioni": ["Domestico", "Non domestico"], "obbligatorio": true },
+      { "key": "tipologia_abitazione", "label": "Tipologia abitazione", "tipo": "select", "opzioni": ["Residenza", "Non residenza"], "obbligatorio": true },
+
+      { "key": "intestazione_fattura", "label": "Intestazione fattura (se diversa)", "tipo": "text", "obbligatorio": false },
+      { "key": "indirizzo_fattura", "label": "Indirizzo invio fattura", "tipo": "text", "obbligatorio": false },
+      { "key": "email_fattura", "label": "Email invio fattura", "tipo": "email", "obbligatorio": false },
+      { "key": "modalita_fattura", "label": "Modalità di ricezione fattura", "tipo": "select", "opzioni": ["Digitale", "Cartacea"], "obbligatorio": true },
+      { "key": "modalita_pagamento", "label": "Modalità di pagamento", "tipo": "select", "opzioni": ["RID bancario", "Bollettino", "Altro"], "obbligatorio": true },
+      { "key": "iban", "label": "IBAN (in caso di RID)", "tipo": "text", "obbligatorio": false },
+      { "key": "intestatario_conto", "label": "Intestatario conto", "tipo": "text", "obbligatorio": false },
+
+      { "key": "fornitore_attuale", "label": "Nome fornitore attuale", "tipo": "text", "obbligatorio": false }
+    ],
+    "downloadUrl": "https://contrattistation.s3.eu-west-1.amazonaws.com/Documentazione/ENIPLENITUDE/1.2.10_11_PROPOSTA+SWI+RESIDENTIAL+-+vers.+A_B+(1).pdf",
+    "downloadLabel": "Scarica il modulo da firmare",
+    "downloadUrl2": "https://kimweb.agency/wp-content/uploads/BOT/PERTINENZE.pdf",
+    "downloadLabel2": "Scarica la CTE da Firmare",
+    "istruzioni": "Scarica il modulo e fallo SOLO firmare al cliente NON E' NECESSARIO COMPILARE (3 firme obbligatorie + 2 firme facoltative). Scansiona il modulo firmato e allegalo insieme agli altri documenti richiesti. ATTENZIONE INSERISCI SOLO LA PAGINA FIRMATA DELLA CTE.",
+    "firmeGuida": [
+      { "url": "https://contrattistation.s3.eu-west-1.amazonaws.com/Documentazione/ENIPLENITUDE/Esempio_Firma1.jpg", "label": "Pagina 1 - Firme obbligatorie" },
+      { "url": "https://contrattistation.s3.eu-west-1.amazonaws.com/Documentazione/ENIPLENITUDE/Esempio_Firma2.jpg.jpg", "label": "Pagina 2 - Firme facoltative" }
+    ]
+  },
+  {
+    "template": "MOBILE_CONSUMER_SOSTITUZIONE_SIM",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO", "tipo": "file", "obbligatorio": true },
+      { "key": "sim_vecchia", "label": "FOTO SIM VECCHIA/DANNEGGIATA", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME", "label": "NOME E COGNOME", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE", "label": "CODICE FISCALE", "tipo": "text", "obbligatorio": true },
+      { "key": "NUMERO_DA_SOSTITUIRE", "label": "NUMERO DA SOSTITUIRE", "tipo": "text", "obbligatorio": true },
+      { "key": "MOTIVO_SOSTITUZIONE", "label": "MOTIVO SOSTITUZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "MOBILE_CONSUMER_SBLOCCO_CLIENTE",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO", "tipo": "file", "obbligatorio": true }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME", "label": "NOME E COGNOME", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE", "label": "CODICE FISCALE", "tipo": "text", "obbligatorio": true },
+      { "key": "NUMERO_DA_SBLOCCARE", "label": "NUMERO DA SBLOCCARE", "tipo": "text", "obbligatorio": true },
+      { "key": "MOTIVO_BLOCCO", "label": "MOTIVO BLOCCO", "tipo": "text", "obbligatorio": true },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "MOBILE_CONSUMER_RILANCIO_MNP",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO", "tipo": "file", "obbligatorio": true },
+      { "key": "fattura_vecchio", "label": "FATTURA VECCHIO GESTORE", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME", "label": "NOME E COGNOME", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE", "label": "CODICE FISCALE", "tipo": "text", "obbligatorio": true },
+      { "key": "NUMERO_DA_RILANCIO", "label": "NUMERO DA RILANCIO", "tipo": "text", "obbligatorio": true },
+      { "key": "GESTORE_PROVENIENZA", "label": "GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_MIGRAZIONE", "label": "CODICE DI MIGRAZIONE", "tipo": "text", "obbligatorio": false },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "MOBILE_CONSUMER_RESET_CREDENZIALI",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO", "tipo": "file", "obbligatorio": true }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME", "label": "NOME E COGNOME", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE", "label": "CODICE FISCALE", "tipo": "text", "obbligatorio": true },
+      { "key": "NUMERO_LINEA", "label": "NUMERO DI LINEA", "tipo": "text", "obbligatorio": true },
+      { "key": "EMAIL_RECUPERO", "label": "EMAIL PER RECUPERO", "tipo": "email", "obbligatorio": true },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "MOBILE_CONSUMER_SBLOCCO_ORDINE_FISSO",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO", "tipo": "file", "obbligatorio": true },
+      { "key": "contratto_fisso", "label": "CONTRATTO LINEA FISSA", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME", "label": "NOME E COGNOME", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE", "label": "CODICE FISCALE", "tipo": "text", "obbligatorio": true },
+      { "key": "NUMERO_ORDINE_FISSO", "label": "NUMERO ORDINE FISSO", "tipo": "text", "obbligatorio": true },
+      { "key": "MOTIVO_BLOCCO", "label": "MOTIVO BLOCCO", "tipo": "text", "obbligatorio": true },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "MOBILE_CONSUMER_RICONTATTO_CLIENTE",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO", "tipo": "file", "obbligatorio": true }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME", "label": "NOME E COGNOME", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE", "label": "CODICE FISCALE", "tipo": "text", "obbligatorio": true },
+      { "key": "NUMERO_LINEA", "label": "NUMERO DI LINEA", "tipo": "text", "obbligatorio": true },
+      { "key": "MOTIVO_RICONTATTO", "label": "MOTIVO RICONTATTO", "tipo": "text", "obbligatorio": true },
+      { "key": "ORARIO_PREFERITO", "label": "ORARIO PREFERITO", "tipo": "text", "obbligatorio": false },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "ENERGIA_CONSUMER_SOSTITUZIONE_SIM",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO", "tipo": "file", "obbligatorio": true },
+      { "key": "sim_vecchia", "label": "FOTO SIM VECCHIA/DANNEGGIATA", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME", "label": "NOME E COGNOME", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE", "label": "CODICE FISCALE", "tipo": "text", "obbligatorio": true },
+      { "key": "NUMERO_DA_SOSTITUIRE", "label": "NUMERO DA SOSTITUIRE", "tipo": "text", "obbligatorio": true },
+      { "key": "MOTIVO_SOSTITUZIONE", "label": "MOTIVO SOSTITUZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "ENERGIA_CONSUMER_SBLOCCO_CLIENTE",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO", "tipo": "file", "obbligatorio": true }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME", "label": "NOME E COGNOME", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE", "label": "CODICE FISCALE", "tipo": "text", "obbligatorio": true },
+      { "key": "NUMERO_DA_SBLOCCARE", "label": "NUMERO DA SBLOCCARE", "tipo": "text", "obbligatorio": true },
+      { "key": "MOTIVO_BLOCCO", "label": "MOTIVO BLOCCO", "tipo": "text", "obbligatorio": true },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "ENERGIA_CONSUMER_RILANCIO_MNP",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO", "tipo": "file", "obbligatorio": true },
+      { "key": "fattura_vecchio", "label": "FATTURA VECCHIO GESTORE", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME", "label": "NOME E COGNOME", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE", "label": "CODICE FISCALE", "tipo": "text", "obbligatorio": true },
+      { "key": "NUMERO_DA_RILANCIO", "label": "NUMERO DA RILANCIO", "tipo": "text", "obbligatorio": true },
+      { "key": "GESTORE_PROVENIENZA", "label": "GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_MIGRAZIONE", "label": "CODICE DI MIGRAZIONE", "tipo": "text", "obbligatorio": false },
+      { "key": "NOTE", "label": "NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "SOSTITUZIONE GUASTO O CAMBIO FORMATO",
+    "documenti": [
+      { "key": "documento", "label": "DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA", "tipo": "file", "obbligatorio": true },
+      { "key": "foto_sim_non_funzionante", "label": "FOTO SIM NON FUNZIONANTE", "tipo": "file", "obbligatorio": true },
+      { "key": "foto_sim_attuale", "label": "FOTO SIM ATTUALE", "tipo": "file", "obbligatorio": true }
+    ],
+    "campi": [
+      { "key": "NUMERO_TELEFONO", "label": "NUMERO DI TELEFONO", "tipo": "text", "obbligatorio": true },
+      { "key": "CF_INTESTATARIO", "label": "CF INTESTATARIO", "tipo": "text", "obbligatorio": true },
+      { "key": "SERIALE_SIM_SOSTITUTIVA", "label": "SERIALE SIM SOSTITUTIVA", "tipo": "text", "obbligatorio": true },
+      { "key": "TIPO_DOCUMENTO", "label": "TIPO DI DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "SCADENZA_DOCUMENTO", "label": "SCADENZA DOCUMENTO", "tipo": "date", "obbligatorio": true }
+    ]
+  },
+  {
+    "template": "TICKET CLIENTE NON ACQUISIBILE",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO", "tipo": "file", "obbligatorio": true },
+      { "key": "screenshot_errore", "label": "SCREENSHOT ERRORE/PROBLEMA", "tipo": "file", "obbligatorio": true },
+      { "key": "VISURA CAMERALE", "label": "VISURA CAMERALE (SE CLIENTE BUSINESS)", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "NOME", "label": "NOME", "tipo": "text", "obbligatorio": true },
+      { "key": "COGNOME", "label": "COGNOME", "tipo": "text", "obbligatorio": true },
+      { "key": "CF", "label": "CF", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO", "label": "RECAPITO", "tipo": "text", "obbligatorio": true },
+      { "key": "EMAIL", "label": "EMAIL", "tipo": "text", "obbligatorio": true },
+      { "key": "IBAN", "label": "IBAN (SE CLIENTE BUSINESS)", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "TICKET ORDINE FISSO PARCHEGGIATO",
+    "documenti": [
+      { "key": "contratto", "label": "CONTRATTO", "tipo": "file", "obbligatorio": true }
+    ],
+    "campi": [
+      { "key": "CODICE_ORDINE", "label": "CODICE ORDINE OR-00", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE_CLIENTE_FW", "label": "CODICE FISCALE CLIENTE FW", "tipo": "text", "obbligatorio": true },
+      { "key": "SEDE_ATTIVAZIONE", "label": "SEDE DI ATTIVAZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "DATA_FIRMA_PDA", "label": "DATA FIRMA PDA", "tipo": "text", "obbligatorio": true },
+      { "key": "EVENTUALI_NOTE", "label": "EVENTUALI NOTE", "tipo": "text", "obbligatorio": false }
+    ]
+  },
+  {
+    "template": "RECUPERO PIN/PUK CLIENTE FASTWEB",
+    "documenti": [],
+    "campi": [
+      { "key": "CF", "label": "CF", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_REPERIBILE", "label": "RECAPITO REPERIBILE ( alternativo )", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_BLOCCATO", "label": "RECAPITO BLOCCATO", "tipo": "text", "obbligatorio": true },
+      { "key": "FASCIA_ORARIA", "label": "FASCIA ORARIA ( 9-13 / 16-20 )", "tipo": "text", "obbligatorio": true }
+    ]
+  },
+  {
+    "template": "RICONTATTO_CLIENTE",
+    "documenti": [
+      { "key": "file_generico", "label": "CARICA FILE", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "CF", "label": "CF", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_REPERIBILE", "label": "RECAPITO REPERIBILE", "tipo": "text", "obbligatorio": true },
+      { "key": "FASCIA_ORARIA", "label": "FASCIA ORARIA ( 9-13 / 16-20 )", "tipo": "text", "obbligatorio": true },
+      { "key": "RIFERIMENTO_RICONTATTO", "label": "RIFERIMENTO RICONTATTO (Fisso o Mobile)", "tipo": "text", "obbligatorio": true }
+    ]
+  },
+  {
+    "template": "TICKET INFO PRATICA FISSO IN ATTIVAZIONE",
+    "documenti": [
+      { "key": "file_generico", "label": "FILE GENERICO", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "CF_CLIENTE_FASTWEB", "label": "CF CLIENTE FASTWEB IN ATTIVAZIONE", "tipo": "text", "obbligatorio": true },
+      { "key": "EVENTUALE_RECAPITO", "label": "EVENTUALE RECAPITO", "tipo": "text", "obbligatorio": false },
+      { "key": "DESCRIZIONE", "label": "DESCRIZIONE", "tipo": "text", "obbligatorio": true }
+    ]
+  },
+  {
+    "template": "RILANCIO_MNP_FASTWEB",
+    "linkDownload": {
+      "url": "https://kimweb.agency/wp-content/uploads/2024/Documentazione/RILANCIO%20MNP%20FASTWEB.pdf",
+      "label": "SCARICA E COMPILA IL MODULO DI RILANCIO",
+      "descrizione": "Scarica, compila e fai firmare il modulo prima di caricarlo"
+    },
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO", "tipo": "file", "obbligatorio": true },
+      { "key": "modulo_rilancio", "label": "MODULO RILANCIO COMPILATO E FIRMATO", "tipo": "file", "obbligatorio": true },
+      { "key": "foto_sim_vecchia", "label": "FOTO DELLA VECCHIA SIM (ALTRO GESTORE)", "tipo": "file", "obbligatorio": true }
+    ],
+    "campi": [
+      { "key": "CF_CLIENTE_FASTWEB", "label": "CF CLIENTE FASTWEB", "tipo": "text", "obbligatorio": true },
+      { "key": "NUMERO_PROVVISORIO_FASTWEB", "label": "NUMERO PROVVISORIO FASTWEB", "tipo": "text", "obbligatorio": true },
+      { "key": "NUMERO_DA_PASSARE_FASTWEB", "label": "NUMERO DA PASSARE IN FASTWEB", "tipo": "text", "obbligatorio": true },
+      { "key": "GESTORE_PROVENIENZA", "label": "GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": true }
+    ]
+  },
+  {
+    "template": "RESET CREDENZIALI DEALER FASTWEB",
+    "documenti": [
+      { "key": "documento", "label": "FRONTE/RETRO DOCUMENTO IDENTITÀ", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera", "label": "TESSERA SANITARIA FRONTE/RETRO", "tipo": "file", "obbligatorio": true }
+    ],
+    "campi": [
+      { "key": "CODICE_RIVENDITORE_COMSY", "label": "CODICE RIVENDITORE/COMSY: NR.1217.0601NA.C", "tipo": "text", "obbligatorio": true },
+      { "key": "RAGIONE_SOCIALE", "label": "RAGIONE SOCIALE", "tipo": "text", "obbligatorio": true }
+    ],
+    "pulsanti": [
+      "RESET ESEGUITO",
+      "RESET IN GESTIONE"
+    ]
+  },
+  {
+    "template": "SUBENTRO 1MOBILE",
+    "downloadUrl": "https://kimweb.agency/wp-content/uploads/2024/Documentazione/modulo_reale_utilizzatore_1mobile.pdf",
+    "downloadLabel": "MODULO SUBENTRO",
+    "istruzioni": "Scarica il modulo, compilalo e firmalo. Poi caricalo nella sezione Documenti.",
+    "documenti": [
+      { "key": "documento_cessante", "label": "DOCUMENTO CESSANTE", "tipo": "file", "obbligatorio": true },
+      { "key": "documento_subentrante", "label": "DOCUMENTO SUBENTRANTE", "tipo": "file", "obbligatorio": true },
+      { "key": "modulo_subentro", "label": "MODULO SUBENTRO COMPILATO E FIRMATO", "tipo": "file", "obbligatorio": true },
+      { "key": "visura_camerale", "label": "VISURA CAMERALE", "tipo": "file", "obbligatorio": false }
+    ],
+    "campi": [
+      { "key": "CF_CLIENTE_1MOBILE", "label": "CF CLIENTE 1MOBILE", "tipo": "text", "obbligatorio": true },
+      { "key": "NUMERO_1MOBILE_ATTIVO", "label": "NUMERO 1MOBILE ATTIVO", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE_NUOVO_INTESTATARIO", "label": "CODICE FISCALE NUOVO INTESTATARIO", "tipo": "text", "obbligatorio": true }
+    ],
+    "pulsanti": [
+      "ATTESA INTEGRAZIONE",
+      "SUBENTRO EFFETTUATO"
+    ]
+  },
+  {
+    "template": "FINANZIAMENTO IN MNP",
+    "documenti": [
+      { "key": "busta_paga", "label": "BUSTA PAGA MESE PRECEDENTE", "tipo": "file", "obbligatorio": true },
+      { "key": "documento", "label": "DOCUMENTO F/R", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera_sanitaria", "label": "TESSERA SANITARIA F/R", "tipo": "file", "obbligatorio": true },
+      { "key": "foto_sim_provenienza", "label": "FOTO SIM GESTORE DI PROVENIENZA", "tipo": "file", "obbligatorio": true }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME", "label": "NOME E COGNOME CLIENTE", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_DI_RESIDENZA", "label": "INDIRIZZO DI RESIDENZA", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE", "label": "CODICE FISCALE", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_CLIENTE", "label": "RECAPITO CLIENTE", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_DI_RIFERIMENTO", "label": "RECAPITO DI RIFERIMENTO (PER FIRMA DIGITALE)", "tipo": "text", "obbligatorio": true },
+      { "key": "MAIL", "label": "MAIL", "tipo": "email", "obbligatorio": true },
+      { "key": "IBAN_CLIENTE", "label": "IBAN CLIENTE", "tipo": "text", "obbligatorio": true },
+      { "key": "TIPO_DOCUMENTO", "label": "TIPO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "NUMERO_DOCUMENTO", "label": "NUMERO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "OFFERTA_DA_ATTIVARE", "label": "OFFERTA DA ATTIVARE", "tipo": "text", "obbligatorio": true },
+      { "key": "NUMERO_DA_PASSARE", "label": "NUMERO DA PASSARE SE MNP", "tipo": "text", "obbligatorio": false },
+      { "key": "GESTORE_DI_PROVENIENZA", "label": "GESTORE DI PROVENIENZA", "tipo": "text", "obbligatorio": false },
+      { "key": "SERIALE_SIM_DA_ATTIVARE", "label": "SERIALE SIM DA ATTIVARE", "tipo": "text", "obbligatorio": true },
+      { "key": "TERMINALE_SCELTO", "label": "TERMINALE SCELTO (GB E COLORE) ED EVENTUALI NOTE", "tipo": "text", "obbligatorio": true }
+    ]
+  },
+  {
+    "template": "FINANZIAMENTO NUOVO NUMERO",
+    "documenti": [
+      { "key": "busta_paga", "label": "BUSTA PAGA MESE PRECEDENTE", "tipo": "file", "obbligatorio": true },
+      { "key": "documento", "label": "DOCUMENTO F/R", "tipo": "file", "obbligatorio": true },
+      { "key": "tessera_sanitaria", "label": "TESSERA SANITARIA F/R", "tipo": "file", "obbligatorio": true },
+      { "key": "foto_sim_provenienza", "label": "FOTO SIM GESTORE DI PROVENIENZA", "tipo": "file", "obbligatorio": true }
+    ],
+    "campi": [
+      { "key": "NOME_E_COGNOME", "label": "NOME E COGNOME CLIENTE", "tipo": "text", "obbligatorio": true },
+      { "key": "INDIRIZZO_DI_RESIDENZA", "label": "INDIRIZZO DI RESIDENZA", "tipo": "text", "obbligatorio": true },
+      { "key": "CODICE_FISCALE", "label": "CODICE FISCALE", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_CLIENTE", "label": "RECAPITO CLIENTE", "tipo": "text", "obbligatorio": true },
+      { "key": "RECAPITO_DI_RIFERIMENTO", "label": "RECAPITO DI RIFERIMENTO (PER FIRMA DIGITALE)", "tipo": "text", "obbligatorio": true },
+      { "key": "MAIL", "label": "MAIL", "tipo": "email", "obbligatorio": true },
+      { "key": "IBAN_CLIENTE", "label": "IBAN CLIENTE", "tipo": "text", "obbligatorio": true },
+      { "key": "TIPO_DOCUMENTO", "label": "TIPO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "NUMERO_DOCUMENTO", "label": "NUMERO DOCUMENTO", "tipo": "text", "obbligatorio": true },
+      { "key": "OFFERTA_DA_ATTIVARE", "label": "OFFERTA DA ATTIVARE", "tipo": "text", "obbligatorio": true },
+      { "key": "SERIALE_SIM_DA_ATTIVARE", "label": "SERIALE SIM DA ATTIVARE", "tipo": "text", "obbligatorio": true },
+      { "key": "TERMINALE_SCELTO", "label": "TERMINALE SCELTO (GB E COLORE)", "tipo": "text", "obbligatorio": true }
+    ]
+  }
+]

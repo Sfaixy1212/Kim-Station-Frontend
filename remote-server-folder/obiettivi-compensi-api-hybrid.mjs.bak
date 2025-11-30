@@ -1,0 +1,573 @@
+import express from 'express';
+import sql from 'mssql';
+import { DateTime } from 'luxon';
+import { authenticateToken } from './auth-middleware.mjs';
+
+const router = express.Router();
+
+// Endpoint per recuperare obiettivi e compensi dell'agente loggato con logica ibrida
+router.get('/agente/obiettivi-compensi', authenticateToken, async (req, res) => {
+  try {
+    // Verifica che l'utente sia un agente
+    const { ruoli, agenteNome, userId } = req.user || {};
+    
+    console.log(`[OBIETTIVI-COMPENSI-HYBRID] Richiesta per agente: ${agenteNome}`);
+    
+    // Consenti solo agli agenti (controllo case-insensitive)
+    const hasAgenteRole = Array.isArray(ruoli) && ruoli.some(r => (r || '').toString().toLowerCase() === 'agente');
+    if (!hasAgenteRole) {
+      return res.status(403).json({ error: 'Accesso negato. Solo gli agenti possono accedere a questa risorsa.' });
+    }
+
+    // Dati temporali
+    const now = DateTime.now().setZone('Europe/Rome');
+    const currentYear = now.year;
+    const currentMonth = now.month;
+
+    // Periodo selezionato via query (?anno=YYYY&mese=M)
+    const qAnno = parseInt(req.query.anno, 10);
+    const qMese = parseInt(req.query.mese, 10);
+    let selectedYear = currentYear;
+    let selectedMonth = currentMonth;
+    if (!isNaN(qAnno) && qAnno >= 2020 && qAnno <= currentYear + 1 && !isNaN(qMese) && qMese >= 1 && qMese <= 12) {
+      // Evita future date: se selezionato > mese corrente dello stesso anno, clamp a corrente
+      if (qAnno > currentYear || (qAnno === currentYear && qMese > currentMonth)) {
+        selectedYear = currentYear;
+        selectedMonth = currentMonth;
+      } else {
+        selectedYear = qAnno;
+        selectedMonth = qMese;
+      }
+    }
+
+    const pool = await sql.connect();
+    
+    // 1. Recupera profilo agente
+    const agenteQuery = `
+      SELECT Id, UserName as Email, 'premi' as TipoProfilo 
+      FROM AspNetUsers u 
+      WHERE u.UserName = @email 
+      AND EXISTS (
+        SELECT 1 FROM AspNetUserRoles ur 
+        JOIN AspNetRoles r ON ur.RoleId = r.Id 
+        WHERE ur.UserId = u.Id AND r.Name = 'Agente'
+      )
+    `;
+    
+    const agenteResult = await pool.request()
+      .input('email', sql.NVarChar, req.user.email)
+      .query(agenteQuery);
+    
+    if (!agenteResult.recordset.length) {
+      return res.status(404).json({ error: 'Agente non trovato' });
+    }
+
+    // 2. Recupera obiettivi da dbo.ObiettiviAgenti
+    const obiettiviQuery = `
+      SELECT * FROM dbo.ObiettiviAgenti 
+      WHERE Agente = @nomeAgente 
+      AND Anno = @anno 
+      AND Mese = @mese
+    `;
+    
+    const obiettiviResult = await pool.request()
+      .input('nomeAgente', sql.NVarChar, agenteNome)
+      .input('anno', sql.Int, selectedYear)
+      .input('mese', sql.Int, selectedMonth)
+      .query(obiettiviQuery);
+    
+    console.log(`[OBIETTIVI-COMPENSI-HYBRID] Ricerca obiettivi per: ${agenteNome}, Anno: ${selectedYear}, Mese: ${selectedMonth}`);
+    console.log(`[OBIETTIVI-COMPENSI-HYBRID] Obiettivi trovati:`, obiettiviResult.recordset.length, obiettiviResult.recordset);
+
+    let targets = {};
+    if (obiettiviResult.recordset.length > 0) {
+      const obj = obiettiviResult.recordset[0];
+      
+      // Premi specifici per agente
+      let premioEnergy = 0, premioFissi = 0;
+      if (agenteNome === 'GIACOMO') {
+        premioEnergy = 300; // €300 per 30 Energy
+        premioFissi = 800;  // €800 per 100 Fissi
+      } else if (agenteNome === 'LUIGI') {
+        premioEnergy = 150; // €150 per 10 Energy
+        premioFissi = 200;  // €200 per 20 Fissi
+      } else if (agenteNome === 'RAFFAELE') {
+        premioEnergy = 0; // Nessun premio (stipendio)
+        premioFissi = 0;  // Nessun premio (stipendio)
+      }
+      
+      targets = {
+        TargetEnergy: obj.ObiettivoPDAEnergy || 0,
+        TargetFissi: obj.ObiettivoPDAFisso || 0,
+        TargetRA: obj.ObiettivoPDAMobileRA || 0,
+        PremioEnergy: premioEnergy,
+        PremioFissi: premioFissi,
+        TargetCore: (obj.ObiettivoPDAFisso || 0) + (obj.ObiettivoPDAEnergy || 0)
+      };
+    } else {
+      // Fallback obiettivi di default per agente
+      if (agenteNome === 'GIACOMO') {
+        targets = { TargetEnergy: 30, TargetFissi: 100, TargetRA: 100, PremioEnergy: 300, PremioFissi: 800, TargetCore: 130 };
+      } else if (agenteNome === 'LUIGI') {
+        targets = { TargetEnergy: 10, TargetFissi: 20, TargetRA: 50, PremioEnergy: 150, PremioFissi: 200, TargetCore: 30 };
+      } else if (agenteNome === 'RAFFAELE') {
+        targets = { TargetEnergy: 0, TargetFissi: 0, TargetRA: 150, PremioEnergy: 0, PremioFissi: 0, TargetCore: 100 };
+      } else {
+        targets = { TargetEnergy: 0, TargetFissi: 0, TargetRA: 0, PremioEnergy: 0, PremioFissi: 0, TargetCore: 0 };
+      }
+    }
+
+    // 3. LOGICA IBRIDA: Controlla disponibilità dati GAROMETRO
+    console.log(`[OBIETTIVI-COMPENSI-HYBRID] Controllo disponibilità GAROMETRO per ${selectedMonth}/${selectedYear}`);
+    
+    const garometroCheckQuery = `
+      SELECT 
+        (SELECT COUNT(*) FROM tbGarometroMobile WHERE YEAR([Usim Rm First Activation Date]) = @anno AND MONTH([Usim Rm First Activation Date]) = @mese) as Mobile,
+        (SELECT COUNT(*) FROM tbGarometroEnergy WHERE [Anno Mese Consuntivo] = @annoMese) as Energy,
+        (SELECT COUNT(*) FROM tbGarometroWireline WHERE [Customer Enter Date Month] = @annoMeseInt) as Wireline
+    `;
+    
+    const annoMese = `${selectedYear}${selectedMonth.toString().padStart(2, '0')}`;
+    const annoMeseInt = parseInt(annoMese);
+    
+    const garometroCheck = await pool.request()
+      .input('anno', sql.Int, selectedYear)
+      .input('mese', sql.Int, selectedMonth)
+      .input('annoMese', sql.NVarChar, annoMese)
+      .input('annoMeseInt', sql.Int, annoMeseInt)
+      .query(garometroCheckQuery);
+
+    const garometroAvailable = garometroCheck.recordset[0];
+    const hasGarometroData = garometroAvailable.Mobile > 0 || garometroAvailable.Energy > 0 || garometroAvailable.Wireline > 0;
+    
+    console.log(`[OBIETTIVI-COMPENSI-HYBRID] GAROMETRO disponibile:`, hasGarometroData, garometroAvailable);
+
+    let salesData = {};
+    let dataSource = '';
+    let lastUpdate = '';
+
+    if (hasGarometroData) {
+      // 4A. USA DATI CERTIFICATI GAROMETRO
+      console.log(`[OBIETTIVI-COMPENSI-HYBRID] Usando dati certificati GAROMETRO`);
+      salesData = await getSalesDataFromGarometro(pool, agenteNome, selectedYear, selectedMonth, annoMese, annoMeseInt);
+      dataSource = 'certificati';
+      lastUpdate = now.toFormat('dd/MM/yyyy HH:mm');
+    } else {
+      // 4B. USA DATI PROVVISORI
+      console.log(`[OBIETTIVI-COMPENSI-HYBRID] Usando dati provvisori InseritoFW/FWEnergiaImporter`);
+      salesData = await getSalesDataFromProvisional(pool, agenteNome, selectedYear, selectedMonth);
+      dataSource = 'provvisori';
+      
+      // Recupera date ultimo batch (colonna Batch, non DataBatch)
+      const lastBatchQuery = `
+        SELECT 
+          (SELECT MAX(Batch) FROM dbo.InseritoFW) as LastTLC,
+          (SELECT MAX(Batch) FROM dbo.FWEnergiaImporter) as LastEnergy
+      `;
+      const lastBatch = await pool.request().query(lastBatchQuery);
+      const lastTLC = lastBatch.recordset[0].LastTLC;
+      const lastEnergy = lastBatch.recordset[0].LastEnergy;
+      
+      console.log(`[PROVVISORI] Date report - TLC: ${lastTLC}, Energy: ${lastEnergy}`);
+      
+      // Formatta le date separatamente (Batch è tipo date, non datetime)
+      const tlcDateObj = lastTLC ? DateTime.fromJSDate(new Date(lastTLC)).setZone('Europe/Rome') : null;
+      const energyDateObj = lastEnergy ? DateTime.fromJSDate(new Date(lastEnergy)).setZone('Europe/Rome') : null;
+      const tlcDate = tlcDateObj ? tlcDateObj.toFormat('dd/MM/yyyy') : 'N/A';
+      const energyDate = energyDateObj ? energyDateObj.toFormat('dd/MM/yyyy') : 'N/A';
+      
+      lastUpdate = `TLC: ${tlcDate}, Energy: ${energyDate}`;
+
+      // Se uno dei batch NON è del mese selezionato (EU/Rome), azzera i provvisori per evitare dati del mese diverso
+      const tlcMonthOk = tlcDateObj ? (tlcDateObj.month === selectedMonth && tlcDateObj.year === selectedYear) : false;
+      const energyMonthOk = energyDateObj ? (energyDateObj.month === selectedMonth && energyDateObj.year === selectedYear) : false;
+      if (!tlcMonthOk || !energyMonthOk) {
+        console.log(`[PROVVISORI] Batch non aggiornati a ${selectedMonth}/${selectedYear} (TLC ok: ${tlcMonthOk}, Energy ok: ${energyMonthOk}). Azzero salesData`);
+        salesData = { fissoRES:0, fissoSHP:0, mobileRES:0, mobileSHP:0, convergenzaRES:0, convergenzaSHP:0, energiaRES:0, energiaSHP:0 };
+      }
+    }
+
+    // 5. Calcolo progressi
+    let progressiCorretti = {};
+    if (dataSource === 'certificati') {
+      console.log(`[OBIETTIVI-COMPENSI-HYBRID] Recupero dati corretti dalla stored procedure GetOrderStatisticsByAgent`);
+      const spRequest = pool.request();
+      spRequest.input('agente', sql.NVarChar, agenteNome);
+      const spResult = await spRequest.execute('GetOrderStatisticsByAgent');
+      console.log('[OBIETTIVI-COMPENSI-HYBRID] Risultato stored procedure:', 
+        spResult.recordset && spResult.recordset.length > 0 ? 'Records trovati: ' + spResult.recordset.length : 'Nessun record');
+      const annoMeseCorrente = `${selectedYear}/${selectedMonth.toString().padStart(2, '0')}`;
+      const recordAttuale = spResult.recordset && spResult.recordset.length > 0 ?
+        spResult.recordset.find(r => r.AnnoMese === annoMeseCorrente) : null;
+      if (recordAttuale) {
+        console.log(`[OBIETTIVI-COMPENSI-HYBRID] Dati corretti trovati per ${annoMeseCorrente}:`, recordAttuale);
+        progressiCorretti = {
+          fissi: {
+            attuale: recordAttuale.FISSI || 0,
+            target: targets.TargetFissi || 0,
+            percentuale: Math.round(((recordAttuale.FISSI || 0) / (targets.TargetFissi || 1)) * 100)
+          },
+          ra: {
+            attuale: recordAttuale.MOBILI || 0,
+            target: targets.TargetRA || 0,
+            percentuale: Math.round(((recordAttuale.MOBILI || 0) / (targets.TargetRA || 1)) * 100)
+          },
+          energy: {
+            attuale: 0,
+            target: targets.TargetEnergy || 0,
+            percentuale: 0
+          },
+          convergenza: {
+            res: recordAttuale['di cui CONV_RES'] || 0,
+            shp: recordAttuale['di cui CONV_BUS'] || 0
+          }
+        };
+      }
+    } else {
+      // Dati provvisori: usa calcolo dai provvisori (eventualmente azzerati sopra)
+      progressiCorretti = calculateProgress(salesData, targets);
+    }
+    
+    // Se ancora vuoto (nessun certificato o provvisorio attuale), forza zeri
+    if (Object.keys(progressiCorretti).length === 0) {
+      progressiCorretti = {
+        fissi: { attuale: 0, target: targets.TargetFissi || 0, percentuale: 0 },
+        ra: { attuale: 0, target: targets.TargetRA || 0, percentuale: 0 },
+        energy: { attuale: 0, target: targets.TargetEnergy || 0, percentuale: 0 },
+        convergenza: { res: 0, shp: 0 }
+      };
+      salesData = { fissoRES:0, fissoSHP:0, mobileRES:0, mobileSHP:0, convergenzaRES:0, convergenzaSHP:0, energiaRES:0, energiaSHP:0 };
+    }
+    
+    const compensi = calculateCompensation(salesData, targets, progressiCorretti);
+
+    // 6. Risposta finale
+    const response = {
+      agente: {
+        id: agenteResult.recordset[0].Id,
+        nome: agenteNome,
+        email: agenteResult.recordset[0].Email,
+        tipoProfilo: agenteResult.recordset[0].TipoProfilo
+      },
+      obiettivi: targets,
+      vendite: salesData,
+      progressi: progressiCorretti,
+      compensi: compensi,
+      dataInfo: {
+        fonte: dataSource,
+        ultimoAggiornamento: lastUpdate,
+        periodo: `${selectedMonth}/${selectedYear}`,
+        certificati: dataSource === 'certificati'
+      }
+    };
+
+    const totVendite = Object.values(response.vendite).reduce((a,b)=>a+(b||0),0);
+    console.log(`[OBIETTIVI-COMPENSI-HYBRID] Risposta completata con dati ${dataSource}, periodo=${response.dataInfo.periodo}, totVendite=${totVendite}`);
+    res.json(response);
+
+  } catch (error) {
+    console.error('[OBIETTIVI-COMPENSI-HYBRID] Errore:', error);
+    res.status(500).json({ 
+      error: 'Errore nel recupero dati obiettivi e compensi',
+      details: error.message 
+    });
+  }
+});
+
+// Funzione per recuperare dati da GAROMETRO (certificati)
+async function getSalesDataFromGarometro(pool, agenteNome, anno, mese, annoMese, annoMeseInt) {
+  console.log(`[GAROMETRO] Recupero dati certificati per ${agenteNome}`);
+  
+  // Mobile da GAROMETRO
+  const mobileQuery = `
+    SELECT 
+      g.[SEGMENTO COMSY] as Segmento,
+      g.[OFFERTA PER CALCOLO ACCOUNT] as Offerta,
+      COUNT(*) as Totale
+    FROM tbGarometroMobile g
+    LEFT JOIN dbo.tbDealers d ON (g.[Usim Dealer PdA Number] = d.COMSY1 OR g.[Usim Dealer PdA Number] = d.COMSY2)
+    WHERE d.AGENTE = @agente
+      AND YEAR(g.[Usim Rm First Activation Date]) = @anno
+      AND MONTH(g.[Usim Rm First Activation Date]) = @mese
+      AND g.[inserimento valido] = 'SI'
+      AND g.[Usim Rm Status] = 'ATTIVA'
+    GROUP BY g.[SEGMENTO COMSY], g.[OFFERTA PER CALCOLO ACCOUNT]
+  `;
+
+  // Energy da GAROMETRO  
+  const energyQuery = `
+    SELECT 
+      g.Segmento,
+      COUNT(*) as Totale
+    FROM tbGarometroEnergy g
+    LEFT JOIN dbo.tbDealers d ON (g.[Codice Comsy Tecnico] = d.COMSY1 OR g.[Codice Comsy Tecnico] = d.COMSY2)
+    WHERE d.AGENTE = @agente
+      AND g.[Anno Mese Consuntivo] = @annoMese
+      AND g.[STATO PDA] = 'OK'
+      AND g.[Stato Contratto] = 'Accettato'
+    GROUP BY g.Segmento
+  `;
+
+  // Wireline da GAROMETRO
+  const wirelineQuery = `
+    SELECT 
+      CASE WHEN g.[Customer Class] = 'Residential' THEN 'RES' ELSE 'SHP' END as Segmento,
+      g.[OFFERTA PER CALCOLO ACCOUNT] as Offerta,
+      COUNT(*) as Totale
+    FROM tbGarometroWireline g
+    LEFT JOIN dbo.tbDealers d ON (g.[Customer Order Owner] = d.COMSY1 OR g.[Customer Order Owner] = d.COMSY2)
+    WHERE d.AGENTE = @agente
+      AND g.[Customer Enter Date Month] = @annoMeseInt
+      AND g.[STATO PDA] = 'OK'
+      AND g.[Conteggiabile Gara] = 'SI'
+    GROUP BY g.[Customer Class], g.[OFFERTA PER CALCOLO ACCOUNT]
+  `;
+
+  const [mobileResult, energyResult, wirelineResult] = await Promise.all([
+    pool.request()
+      .input('agente', sql.NVarChar, agenteNome)
+      .input('anno', sql.Int, anno)
+      .input('mese', sql.Int, mese)
+      .query(mobileQuery),
+    pool.request()
+      .input('agente', sql.NVarChar, agenteNome)
+      .input('annoMese', sql.NVarChar, annoMese)
+      .query(energyQuery),
+    pool.request()
+      .input('agente', sql.NVarChar, agenteNome)
+      .input('annoMeseInt', sql.Int, annoMeseInt)
+      .query(wirelineQuery)
+  ]);
+
+  return processSalesResults(mobileResult.recordset, energyResult.recordset, wirelineResult.recordset);
+}
+
+// Funzione per recuperare dati provvisori
+async function getSalesDataFromProvisional(pool, agenteNome, anno, mese) {
+  console.log(`[PROVVISORI] Recupero dati provvisori per ${agenteNome}`);
+  
+  // TLC da InseritoFW
+  const tlcQuery = `
+    WITH LatestBatch AS (
+      SELECT MAX(Batch) as MaxBatch FROM dbo.InseritoFW
+    )
+    SELECT 
+      tpf.SEGMENTO,
+      CASE 
+        WHEN ifw.[Tipo Ordine] = 'FISSO E MOBILE' AND tpf.TIPO_Fastweb = 'FISSO' 
+        THEN 'CONVERGENZA'
+        ELSE ifw.[Tipo Ordine]
+      END as TipoAttivazione,
+      COUNT(*) as Totale
+    FROM dbo.InseritoFW ifw
+    JOIN LatestBatch lb ON ifw.Batch = lb.MaxBatch
+    LEFT JOIN dbo.tbDealers d ON (ifw.[Codice Comsy Tecnico Attuale] = d.COMSY1 OR ifw.[Codice Comsy Tecnico Attuale] = d.COMSY2)
+    LEFT JOIN dbo.tbPianiFastweb tpf ON ifw.VALORE = tpf.VALORE
+    WHERE d.AGENTE = @agente
+      AND ifw.[Stato dell'ordine CPQ] = 'Completato'
+    GROUP BY tpf.SEGMENTO, ifw.[Tipo Ordine], tpf.TIPO_Fastweb
+  `;
+
+  // Energy da FWEnergiaImporter
+  const energyQuery = `
+    WITH LatestBatch AS (
+      SELECT MAX(Batch) as MaxBatch FROM dbo.FWEnergiaImporter
+    )
+    SELECT 
+      fwe.Segmento,
+      COUNT(*) as Totale
+    FROM dbo.FWEnergiaImporter fwe
+    JOIN LatestBatch lb ON fwe.Batch = lb.MaxBatch
+    LEFT JOIN dbo.tbDealers d ON (fwe.[Codice Comsy/Order Owner (Report!DBSELLER)] = d.COMSY1 OR fwe.[Codice Comsy/Order Owner (Report!DBSELLER)] = d.COMSY2)
+    WHERE d.AGENTE = @agente
+      AND fwe.[Stato Contratto] = 'Accettato'
+    GROUP BY fwe.Segmento
+  `;
+
+  const [tlcResult, energyResult] = await Promise.all([
+    pool.request()
+      .input('agente', sql.NVarChar, agenteNome)
+      .input('anno', sql.Int, anno)
+      .input('mese', sql.Int, mese)
+      .query(tlcQuery),
+    pool.request()
+      .input('agente', sql.NVarChar, agenteNome)
+      .input('anno', sql.Int, anno)
+      .input('mese', sql.Int, mese)
+      .query(energyQuery)
+  ]);
+
+  return processProvisionalResults(tlcResult.recordset, energyResult.recordset);
+}
+
+// Processa risultati provvisori
+function processProvisionalResults(tlcData, energyData) {
+  const result = {
+    fissoRES: 0, fissoSHP: 0,
+    mobileRES: 0, mobileSHP: 0,
+    convergenzaRES: 0, convergenzaSHP: 0,
+    energiaRES: 0, energiaSHP: 0
+  };
+
+  // Processa TLC
+  tlcData.forEach(row => {
+    const segmento = row.SEGMENTO;
+    const tipo = row.TipoAttivazione;
+    const totale = row.Totale || 0;
+    
+    if (tipo === 'MOBILE') {
+      if (segmento === 'RES') result.mobileRES += totale;
+      if (segmento === 'SHP') result.mobileSHP += totale;
+    } else if (tipo === 'FISSO') {
+      if (segmento === 'RES') result.fissoRES += totale;
+      if (segmento === 'SHP') result.fissoSHP += totale;
+    } else if (tipo === 'CONVERGENZA') {
+      if (segmento === 'RES') result.convergenzaRES += totale;
+      if (segmento === 'SHP') result.convergenzaSHP += totale;
+    }
+  });
+
+  // Processa Energy
+  energyData.forEach(row => {
+    const segmento = row.Segmento;
+    if (segmento === 'RES') result.energiaRES += row.Totale;
+    if (segmento === 'SHP') result.energiaSHP += row.Totale;
+  });
+
+  return result;
+}
+
+// Calcola progressi verso obiettivi (funzione originale)
+function calculateProgressOriginal(salesData, targets) {
+  const totalFissi = (salesData.fissoRES || 0) + (salesData.fissoSHP || 0) + 
+                     (salesData.convergenzaRES || 0) + (salesData.convergenzaSHP || 0);
+  const totalRA = (salesData.mobileRES || 0) + (salesData.mobileSHP || 0);
+  const totalEnergy = (salesData.energiaRES || 0) + (salesData.energiaSHP || 0);
+
+  return {
+    fissi: {
+      attuale: totalFissi,
+      target: targets.TargetFissi,
+      percentuale: targets.TargetFissi > 0 ? Math.round((totalFissi / targets.TargetFissi) * 100) : 0
+    },
+    ra: {
+      attuale: totalRA,
+      target: targets.TargetRA,
+      percentuale: targets.TargetRA > 0 ? Math.round((totalRA / targets.TargetRA) * 100) : 0
+    },
+    energy: {
+      attuale: totalEnergy,
+      target: targets.TargetEnergy,
+      percentuale: targets.TargetEnergy > 0 ? Math.round((totalEnergy / targets.TargetEnergy) * 100) : 0
+    }
+  };
+}
+
+// Processa i risultati delle vendite
+function processSalesResults(mobileData, energyData, wirelineData) {
+  let salesData = {
+    mobileRES: 0,
+    mobileSHP: 0,
+    fissoRES: 0,
+    fissoSHP: 0,
+    convergenzaRES: 0,
+    convergenzaSHP: 0,
+    energiaRES: 0,
+    energiaSHP: 0
+  };
+
+  // Processa dati mobile
+  mobileData.forEach(row => {
+    const segmento = row.Segmento;
+    const totale = row.Totale || 0;
+    
+    if (segmento === 'RES') {
+      salesData.mobileRES += totale;
+    } else if (segmento === 'SHP') {
+      salesData.mobileSHP += totale;
+    }
+  });
+
+  // Processa dati energy
+  energyData.forEach(row => {
+    const segmento = row.Segmento;
+    const totale = row.Totale || 0;
+    
+    if (segmento === 'RES') {
+      salesData.energiaRES += totale;
+    } else if (segmento === 'SHP') {
+      salesData.energiaSHP += totale;
+    }
+  });
+
+  // Processa dati wireline
+  wirelineData.forEach(row => {
+    const segmento = row.Segmento;
+    const offerta = row.Offerta || '';
+    const totale = row.Totale || 0;
+    
+    // Identifica convergenza
+    const isConvergenza = offerta.toLowerCase().includes('convergenza') || 
+                         offerta.toLowerCase().includes('conv');
+    
+    if (segmento === 'RES') {
+      if (isConvergenza) {
+        salesData.convergenzaRES += totale;
+      } else {
+        salesData.fissoRES += totale;
+      }
+    } else if (segmento === 'SHP') {
+      if (isConvergenza) {
+        salesData.convergenzaSHP += totale;
+      } else {
+        salesData.fissoSHP += totale;
+      }
+    }
+  });
+
+  return salesData;
+}
+
+// Calcola progressi verso obiettivi
+function calculateProgress(salesData, targets) {
+  const pdaEnergy = (salesData.energiaRES || 0) + (salesData.energiaSHP || 0);
+  const pdaFissi = (salesData.fissoRES || 0) + (salesData.fissoSHP || 0) + 
+                   (salesData.convergenzaRES || 0) + (salesData.convergenzaSHP || 0);
+  const simRA = (salesData.mobileRES || 0) + (salesData.mobileSHP || 0);
+
+  return {
+    fissi: {
+      attuale: pdaFissi,
+      target: targets.TargetFissi || 0,
+      percentuale: Math.round((pdaFissi / (targets.TargetFissi || 1)) * 100)
+    },
+    energy: {
+      attuale: pdaEnergy,
+      target: targets.TargetEnergy || 0,
+      percentuale: Math.round((pdaEnergy / (targets.TargetEnergy || 1)) * 100)
+    },
+    ra: {
+      attuale: simRA,
+      target: targets.TargetRA || 0,
+      percentuale: Math.round((simRA / (targets.TargetRA || 1)) * 100)
+    },
+    convergenza: {
+      res: salesData.convergenzaRES || 0,
+      shp: salesData.convergenzaSHP || 0
+    }
+  };
+}
+
+// Calcola compensi
+function calculateCompensation(sales, targets, progressi) {
+  const premioFissi = progressi.fissi.percentuale >= 100 ? targets.PremioFissi : 0;
+  const premioEnergy = progressi.energy.percentuale >= 100 ? targets.PremioEnergy : 0;
+  
+  return {
+    premioFissi: premioFissi,
+    premioEnergy: premioEnergy,
+    totale: premioFissi + premioEnergy
+  };
+}
+
+export default router;

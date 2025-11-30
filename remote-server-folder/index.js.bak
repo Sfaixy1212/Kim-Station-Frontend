@@ -1,0 +1,2207 @@
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import express from 'express';
+import { DateTime } from 'luxon';
+import sql from 'mssql';
+import { createRequire } from 'module';
+import axios from 'axios';
+import https from 'https';
+import jwt from 'jsonwebtoken';
+import Stripe from 'stripe';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Carica le variabili d'ambiente
+const result = dotenv.config({ path: path.join(__dirname, '.env') });
+console.log('[DEBUG] dotenv result:', result);
+console.log('Stripe key:', process.env.STRIPE_SECRET_KEY);
+
+// Configura axios per non verificare i certificati SSL
+axios.defaults.httpsAgent = new https.Agent({  
+  rejectUnauthorized: false
+});
+
+// Crea require per i moduli CommonJS
+const require = createRequire(import.meta.url);
+const aspnetIdentityPw = require('aspnet-identity-pw');
+console.log('aspnetIdentityPw export:', aspnetIdentityPw);
+console.log('aspnetIdentityPw.validatePassword:', typeof aspnetIdentityPw.validatePassword);
+
+// Verifica chiave Stripe
+if (!process.env.STRIPE_SECRET_KEY) {
+  console.error('[FATAL] STRIPE_SECRET_KEY non definita! Arresto server.');
+  process.exit(1);
+}
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+let sqlErrorListenerAdded = false;
+
+// Configurazione del database
+const dbConfig = {
+  user: process.env.DB_USER || 'sa',
+  password: process.env.DB_PASSWORD || '1RUDfS;1LS!u%CvWm',
+  server: process.env.DB_SERVER || '54.155.32.254',
+  port: parseInt(process.env.DB_PORT || '1433'),
+  database: process.env.DB_NAME || 'KIM_STAGING',
+  options: {
+    encrypt: false,
+    trustServerCertificate: true,
+    enableArithAbort: true,
+    connectTimeout: 15000,
+    requestTimeout: 15000,
+    validateBulkLoadParameters: false,
+    useUTC: false,
+    abortTransactionOnError: false,
+    enableAnsiNullDefault: true,
+    appName: 'kim-backend',
+    cryptoCredentialsDetails: {
+      minVersion: 'TLSv1.2'
+    }
+  }
+};
+
+// Funzione per la connessione al database
+async function connectToDatabase() {
+  try {
+    if (!sql.connected) {
+      console.log('Tentativo di connessione al database...');
+      await sql.connect(dbConfig);
+      console.log('Connessione al database stabilita con successo');
+      
+      // Aggiungi il listener di errori solo una volta
+      if (!sqlErrorListenerAdded) {
+        sql.on('error', err => {
+          console.error('Errore persistente di connessione al database (sql.on(error)):', err);
+        });
+        sqlErrorListenerAdded = true;
+      }
+    }
+    return true;
+  } catch (err) {
+    console.error('Errore durante la connessione al database:', err);
+    return false;
+  }
+}
+
+// Middleware per l'autenticazione del token JWT
+function authenticateToken(req, res, next) {
+  // --- DEBUG: Middleware caricato, versione ---
+  if (!global._auth_debug_logged) {
+    console.log('[AUTH DEBUG] Funzione authenticateToken caricata:', authenticateToken.toString().slice(0, 300));
+    global._auth_debug_logged = true;
+  }
+  console.log('[AUTH DEBUG] Middleware chiamato, header Authorization:', req.headers['authorization']);
+  const authHeader = req.headers['authorization'];
+  console.log('[AUTH] authHeader:', authHeader); // LOG 1
+  const token = authHeader && authHeader.split(' ')[1];
+  console.log('[AUTH] Token estratto:', token); // LOG 2
+  console.log('[AUTH] JWT_SECRET usata per VERIFICARE:', process.env.JWT_SECRET); // LOG 3
+
+  if (token == null) {
+    console.log('[AUTH] Token nullo, invio 401');
+    return res.sendStatus(401);
+  }
+
+  try {
+    const user = jwt.verify(token, process.env.JWT_SECRET);
+    console.log('[AUTH DEBUG] Payload decodificato:', user);
+    console.log('[AUTH] Token verificato con successo, utente:', user.email);
+    req.user = user;
+    next();
+  } catch (err) {
+    console.error('[AUTH] Errore jwt.verify:', err.message); // LOG 4
+    console.error('[AUTH] Token che ha fallito la verifica:', token); // LOG 5
+    console.error('[AUTH] Chiave usata per la verifica che ha fallito:', process.env.JWT_SECRET); // LOG 6
+    return res.sendStatus(403); // se il token non è valido, proibito
+  }
+}
+
+// Crea l'applicazione Express
+const app = express();
+
+// Endpoint pubblico per ottenere la chiave pubblica Stripe
+app.get('/api/stripe/public-key', (req, res) => {
+  res.json({ publicKey: process.env.STRIPE_PUBLIC_KEY || '' });
+});
+
+// --- ATTENZIONE: il webhook Stripe DEVE essere la primissima route! ---
+// Webhook Stripe - Nessun middleware (nemmeno connessione DB o body parser) deve precedere questa route
+// Questa è l'unica implementazione del webhook Stripe
+app.post('/webhook/stripe', express.raw({type: 'application/json'}), async (req, res) => {
+  console.log('[STRIPE WEBHOOK] Ricevuta richiesta:', {
+    headers: req.headers,
+    rawBody: req.body && req.body.length ? req.body.toString('utf8') : '[vuoto]'
+  });
+  const stripeWebhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  const sig = req.headers['stripe-signature'];
+  let event;
+  try {
+    event = stripe.webhooks.constructEvent(req.body, sig, stripeWebhookSecret);
+    console.log('[STRIPE WEBHOOK] Evento verificato:', event.type);
+    try {
+      if (event.type === 'payment_intent.succeeded') {
+        const pi = event.data.object;
+        const userId = pi.metadata.userId;
+        const amount = pi.amount / 100;
+        const payload = JSON.stringify(pi);
+        let emailCliente = pi.metadata.emailCliente || '';
+const orderType = pi.metadata.orderType || '';
+console.log('[DEBUG][STRIPE] orderType:', orderType, 'metadata:', pi.metadata, 'emailCliente:', emailCliente);
+if (!orderType) {
+  console.warn('[DEBUG][STRIPE] orderType VUOTO! Metadata Stripe:', pi.metadata);
+}
+console.log('[DEBUG][STRIPE] emailCliente:', emailCliente);
+        let carrello = [];
+        let speseSpedizione = 0;
+        let totaleOrdine = amount;
+        let noteOrdine = '';
+        let idStatoOrdineProdotto = 2; // Stato "Pagato" (modifica se necessario)
+
+        // Prova a estrarre il carrello dal metadata o dal campo Payload
+        if (pi.metadata && pi.metadata.carrello) {
+          try { carrello = JSON.parse(pi.metadata.carrello); } catch(e) { carrello = []; }
+        } else if (pi.metadata && pi.metadata.cart) {
+          try { carrello = JSON.parse(pi.metadata.cart); } catch(e) { carrello = []; }
+        } else if (pi.cart) {
+          try { carrello = JSON.parse(pi.cart); } catch(e) { carrello = []; }
+        }
+        if (pi.metadata && pi.metadata.speseSpedizione) {
+          speseSpedizione = Number(pi.metadata.speseSpedizione) || 0;
+        }
+        if (pi.metadata && pi.metadata.totaleOrdine) {
+          totaleOrdine = Number(pi.metadata.totaleOrdine) || totaleOrdine;
+        }
+        // Normalizza sempre in euro
+        if (totaleOrdine > 1000) {
+          totaleOrdine = Math.round(totaleOrdine) / 100;
+        }
+        if (pi.metadata && pi.metadata.noteOrdine) {
+          noteOrdine = pi.metadata.noteOrdine;
+        }
+        
+        try {
+          await connectToDatabase();
+          let idOrdineProdotto = null;
+          // Inserisci ordine SOLO se NON è una ricarica plafond
+          if (orderType !== 'RIC') {
+            const ordineResult = await new sql.Request()
+              .input('idDealer', sql.Int, userId)
+              .input('DataOra', sql.DateTime, DateTime.now().setZone('Europe/Rome').toFormat('yyyy-MM-dd HH:mm:ss'))
+              .input('OrdineDA', sql.NVarChar, emailCliente)
+              .input('SpeseSpedizione', sql.Int, speseSpedizione)
+              .input('TotaleOrdine', sql.Int, totaleOrdine)
+              .input('Payload', sql.NVarChar(sql.MAX), payload)
+              .input('idStatoOrdineProdotto', sql.Int, idStatoOrdineProdotto)
+              .input('NoteOrdine', sql.NVarChar, noteOrdine)
+              .query(`
+                INSERT INTO dbo.tbOrdiniProdotti
+                  (idDealer, DataOra, OrdineDA, SpeseSpedizione, TotaleOrdine, Payload, idStatoOrdineProdotto, NoteOrdine, Note4Dealer, NoteInterne, OrdineDaAgente, DataStato)
+                OUTPUT INSERTED.IDOrdineProdotto
+                VALUES
+                  (@idDealer, @DataOra, @OrdineDA, @SpeseSpedizione, @TotaleOrdine, @Payload, @idStatoOrdineProdotto, @NoteOrdine, '', '', 0, @DataOra)
+              `);
+            idOrdineProdotto = ordineResult.recordset[0].IDOrdineProdotto;
+          }
+
+          // Inserisci sempre in tbPaymentSessions per pagamenti con carta
+          try {
+            const isProdotto = orderType === 'PROD' || orderType === '';
+            const sessionId = pi.id || null; // PaymentIntent ID per carta
+            const paymentMethod = (pi.payment_method_types && pi.payment_method_types[0]) || 'card';
+            const paymentIntentId = pi.id || null;
+            const sourceType = isProdotto ? 'PROD' : 'RIC';
+            const sourceId = isProdotto ? idOrdineProdotto : null;
+            console.log('[DEBUG][STRIPE] emailCliente usata per RequestedByUser:', emailCliente);
+const requestedByUser = emailCliente || '';
+            const paymentState = pi.status === 'succeeded' ? 'paid' : pi.status;
+            await new sql.Request()
+              .input('SessionID', sql.NVarChar, sessionId)
+              .input('idDealer', sql.Int, userId)
+              .input('Date', sql.DateTime, DateTime.now().setZone('Europe/Rome').toFormat('yyyy-MM-dd HH:mm:ss'))
+              .input('Amount', sql.Int, totaleOrdine)
+              .input('SessionPayload', sql.NVarChar(sql.MAX), JSON.stringify(pi))
+              .input('RequestedByUser', sql.NVarChar, requestedByUser)
+              .input('State', sql.NVarChar, paymentState)
+              .input('PaymentIntentId', sql.NVarChar, paymentIntentId)
+              .input('PaymentMethod', sql.NVarChar, paymentMethod)
+              .input('SourceType', sql.NVarChar, sourceType)
+              .input('SourceID', sql.Int, sourceId)
+              .query(`
+                INSERT INTO dbo.tbPaymentSessions
+                  (SessionID, idDealer, Date, Amount, SessionPayload, RequestedByUser, State, PaymentIntentId, PaymentMethod, SourceType, SourceID)
+                VALUES
+                  (@SessionID, @idDealer, @Date, @Amount, @SessionPayload, @RequestedByUser, @State, @PaymentIntentId, @PaymentMethod, @SourceType, @SourceID)
+              `);
+          } catch (err) {
+            console.error('[PAYMENT SESSIONS] Errore inserimento:', err);
+          }
+          // Inserisci dettagli prodotti SOLO se NON è una ricarica plafond
+          if (orderType !== 'RIC') {
+            console.log('[DEBUG] Carrello al momento del dettaglio:', carrello);
+            if (Array.isArray(carrello) && carrello.length > 0) {
+              for (const prodotto of carrello) {
+                const idOfferta = prodotto.id || prodotto.idOfferta || null;
+                const quantita = prodotto.quantita || 1;
+                let costoUnitario = prodotto.Crediti || prodotto.prezzo || 0;
+                // Se arriva in centesimi (es. > 1000), converti in euro
+                if (costoUnitario > 1000) {
+                  costoUnitario = Math.round(costoUnitario) / 100;
+                }
+                let simType = prodotto.SIMTYPE || null;
+                let simCount = prodotto.SIMCOUNT || 0;
+                // Recupera dati da tbOfferte se mancanti o nulli
+                if (!costoUnitario || !simType || !simCount) {
+                  const offertaRes = await sql.query`SELECT Crediti, SIMTYPE, SIMCOUNT FROM dbo.tbOfferte WHERE IDOfferta = ${idOfferta}`;
+                  const offerta = offertaRes.recordset[0];
+                  if (offerta) {
+                    if (!costoUnitario) costoUnitario = offerta.Crediti || 0;
+                    if (!simType) simType = offerta.SIMTYPE || null;
+                    if (!simCount) simCount = offerta.SIMCOUNT || 0;
+                  }
+                }
+                console.log('[DEBUG] Inserisco dettaglio:', { idOrdineProdotto, idOfferta, quantita, costoUnitario, simType, simCount });
+                try {
+                  await new sql.Request()
+                    .input('idOrdineProdotto', sql.Int, idOrdineProdotto)
+                    .input('idOfferta', sql.Int, idOfferta)
+                    .input('Quantita', sql.Int, quantita)
+                    .input('CostoUnitario', sql.Int, costoUnitario)
+                    .input('SIMTYPE', sql.NVarChar, simType)
+                    .input('SIMCOUNT', sql.Int, simCount)
+                    .query(`
+                      INSERT INTO dbo.tbDettagliOrdiniProdotti
+                        (idOrdineProdotto, idOfferta, Quantita, CostoUnitario, SIMTYPE, SIMCOUNT)
+                      VALUES
+                        (@idOrdineProdotto, @idOfferta, @Quantita, @CostoUnitario, @SIMTYPE, @SIMCOUNT)
+                    `);
+                  console.log('[DB] Dettaglio prodotto inserito in tbDettagliOrdiniProdotti:', prodotto);
+                } catch (err) {
+                  console.error('[ERRORE DETTAGLIO ORDINE]', err);
+                }
+              }
+            } else {
+              console.warn('[WARN] Carrello vuoto o non valido, nessun dettaglio inserito.');
+            }
+            console.log(`[STRIPE WEBHOOK] Ordine inserito: IDOrdineProdotto=${idOrdineProdotto}, Dealer=${userId}, Totale=${totaleOrdine}`);
+          }
+
+        } catch (dbErr) {
+          console.error('[STRIPE WEBHOOK] Errore inserimento ordine:', dbErr);
+        }
+
+        // Se è una ricarica plafond, inserisci anche in tbTransazioni
+        try {
+          if (orderType === 'RIC') {
+            const fonte = 'RIC';
+            const descrizione = 'Ricarica plafond';
+            const crediti = totaleOrdine;
+            const dataOra = DateTime.now().setZone('Europe/Rome').toFormat('yyyy-MM-dd HH:mm:ss');
+            let idAgenteTrans = null;
+            try {
+              const agenteRes = await sql.query`SELECT TOP 1 idAgente FROM dbo.tbDealers WHERE IDDealer = ${userId}`;
+              if (agenteRes.recordset.length) {
+                idAgenteTrans = agenteRes.recordset[0].idAgente || null;
+              }
+            } catch (err) {
+              console.error('[TRANS] Errore recupero idAgente:', err);
+            }
+            let riferimentoTrans = null;
+            try {
+              const refRes = await sql.query`SELECT TOP 1 ID FROM dbo.tbPaymentSessions WHERE idDealer = ${userId} ORDER BY Date DESC`;
+              if (refRes.recordset.length) {
+                riferimentoTrans = refRes.recordset[0].ID;
+              }
+            } catch (err) {
+              console.error('[TRANS] Errore recupero riferimento PaymentSession:', err);
+            }
+            const payloadTrans = JSON.stringify(pi);
+            const noteTrans = noteOrdine || '';
+            console.log('[DEBUG][tbTransazioni] Inserimento:', {
+  Descrizione: 'RICARICA PLAFOND (Paid)',
+  idDealer: userId,
+  Crediti: crediti,
+  DataOra: dataOra,
+  idAgente: idAgenteTrans,
+  Fonte: fonte,
+  Payload: payloadTrans,
+  Note: noteTrans,
+  Riferimento: riferimentoTrans
+});
+await new sql.Request()
+              .input('Descrizione', sql.NVarChar, 'RICARICA PLAFOND (Paid)')
+              .input('idDealer', sql.Int, userId)
+              .input('Crediti', sql.Int, crediti)
+              .input('DataOra', sql.DateTime, dataOra)
+              .input('idAgente', sql.Int, idAgenteTrans)
+              .input('Fonte', sql.NVarChar, fonte)
+              .input('Payload', sql.NVarChar(sql.MAX), payloadTrans)
+              .input('Note', sql.NVarChar, noteTrans)
+              .input('Riferimento', sql.NVarChar, riferimentoTrans)
+              .query(`
+                INSERT INTO dbo.tbTransazioni
+                  (Descrizione, idDealer, Crediti, DataOra, idAgente, Fonte, Payload, Note, Riferimento)
+                VALUES
+                  (@Descrizione, @idDealer, @Crediti, @DataOra, @idAgente, @Fonte, @Payload, @Note, @Riferimento)
+              `);
+          }
+        } catch (err) {
+          console.error('[TRANS] Errore inserimento ricarica plafond:', err);
+        }
+      }
+      console.log('[STRIPE WEBHOOK] Logica business eseguita');
+    } catch (logicErr) {
+      console.error('[STRIPE WEBHOOK] Errore logica business:', logicErr);
+      // Non rilanciare, rispondi comunque OK
+    }
+    res.json({ received: true });
+    console.log('[STRIPE WEBHOOK] Risposta inviata 200 OK');
+  } catch (err) {
+    console.error('Errore verifica webhook Stripe:', err);
+    res.status(400).send(`Webhook Error: ${err.message}`);
+    console.log('[STRIPE WEBHOOK] Risposta inviata 400 Bad Request');
+  }
+});
+
+// Middleware per il parsing del body JSON
+app.use(express.json());
+
+// Middleware per gestire la connessione al database
+app.use(async (req, res, next) => {
+  try {
+    const isConnected = await connectToDatabase();
+    if (!isConnected) {
+      return res.status(503).json({ 
+        error: 'Servizio non disponibile',
+        message: 'Impossibile connettersi al database. Riprova più tardi.'
+      });
+    }
+    next();
+  } catch (err) {
+    console.error('Errore nel middleware database:', err);
+    res.status(500).json({ 
+      error: 'Errore interno del server',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined
+    });
+  }
+});
+
+
+
+// Endpoint per registrare richiesta ricarica plafond con bonifico
+app.post('/api/ricarica-plafond-bonifico', authenticateToken, async (req, res) => {
+  try {
+    const { amount, userId } = req.body;
+    const importo = Number(amount);
+    if (![50, 100, 250, 500].includes(importo)) {
+      return res.status(400).json({ error: 'Importo non valido' });
+    }
+    if (!userId) {
+      return res.status(400).json({ error: 'userId mancante' });
+    }
+    // Non inserire nulla in tbTransazioni: la verifica bonifico è manuale
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('Errore in /api/ricarica-plafond-bonifico:', err);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  }
+});
+
+// === API per ordini con BONIFICO ===
+
+// Endpoint per ottenere i dealer assegnati all'agente
+app.get('/api/miei-dealer', authenticateToken, async (req, res) => {
+  try {
+    const agentEmail = req.user.email;
+    if (!agentEmail) {
+      return res.status(401).json({ error: 'Email agente mancante nel token' });
+    }
+    await connectToDatabase();
+    // Recupera il nome dell'agente
+    const resultAgent = await new sql.Request()
+      .input('email', sql.NVarChar, agentEmail)
+      .query('SELECT Nome, IdAgente FROM dbo.tbAgenti WHERE RecapitoEmail = @email');
+    if (!resultAgent.recordset || resultAgent.recordset.length === 0) {
+      return res.status(404).json({ error: 'Agente non trovato' });
+    }
+    const { Nome: nomeAgente, IdAgente } = resultAgent.recordset[0];
+    // Recupera i dealer assegnati con ID, email e cell
+    const resultDealers = await new sql.Request()
+      .input('nomeAgente', sql.NVarChar, nomeAgente)
+      .query('SELECT IDDealer, RagioneSociale, RecapitoEmail, RecapitoCell FROM dbo.tbDealers WHERE AGENTE = @nomeAgente');
+    const dealers = resultDealers.recordset.map(d => ({
+      id: d.IDDealer,
+      nome: d.RagioneSociale,
+      email: d.RecapitoEmail,
+      telefono: d.RecapitoCell || ''
+    }));
+    return res.json({ dealers, idAgente: IdAgente });
+  } catch (err) {
+    console.error('Errore in /api/miei-dealer:', err);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  }
+});
+
+// Endpoint per l'invio ordine da agente a dealer
+app.post('/api/ordine-agente', authenticateToken, express.json(), async (req, res) => {
+  try {
+    const { carrello, idDealer, noteOrdine, idAgente } = req.body;
+    
+    if (!Array.isArray(carrello) || carrello.length === 0) {
+      return res.status(400).json({ error: 'Carrello vuoto' });
+    }
+    
+    if (!idDealer) {
+      return res.status(400).json({ error: 'Dealer non specificato' });
+    }
+    
+    await connectToDatabase();
+    
+    // Calcola il totale dell'ordine
+    const totaleOrdine = carrello.reduce((tot, item) => {
+      const prezzo = item.Crediti || item.prezzo || 0;
+      const quantita = item.quantita || 1;
+      return tot + (prezzo * quantita);
+    }, 0);
+    
+    // Inserisci l'ordine
+    const payload = JSON.stringify(carrello);
+    const dataOra = DateTime.now().setZone('Europe/Rome').toFormat('yyyy-MM-dd HH:mm:ss');
+    
+    // Inizia la transazione
+    const transaction = new sql.Transaction();
+    await transaction.begin();
+    
+    try {
+      const request = new sql.Request(transaction);
+      
+      // Inserisci l'ordine principale
+      const ordineResult = await request
+        .input('idDealer', sql.Int, idDealer)
+        .input('DataOra', sql.DateTime, dataOra)
+        .input('OrdineDA', sql.NVarChar, `Agente ID: ${idAgente}`)
+        .input('SpeseSpedizione', sql.Int, 0)
+        .input('TotaleOrdine', sql.Int, totaleOrdine)
+        .input('Payload', sql.NVarChar(sql.MAX), payload)
+        .input('idStatoOrdineProdotto', sql.Int, 6) // Stato "In attesa pagamento"
+        .input('NoteOrdine', sql.NVarChar, noteOrdine || '')
+        .input('OrdineDaAgente', sql.Int, 1) // Flag ordine da agente
+        .query(`
+          INSERT INTO dbo.tbOrdiniProdotti
+            (idDealer, DataOra, OrdineDA, SpeseSpedizione, TotaleOrdine, Payload, 
+             idStatoOrdineProdotto, NoteOrdine, Note4Dealer, NoteInterne, OrdineDaAgente, DataStato)
+          OUTPUT INSERTED.IDOrdineProdotto
+          VALUES
+            (@idDealer, @DataOra, @OrdineDA, @SpeseSpedizione, @TotaleOrdine, @Payload, 
+             @idStatoOrdineProdotto, @NoteOrdine, '', '', @OrdineDaAgente, @DataOra)
+        `);
+      
+      const idOrdineProdotto = ordineResult.recordset[0].IDOrdineProdotto;
+      
+      // Inserisci i dettagli dell'ordine
+      try {
+        for (const prodotto of carrello) {
+          const idOfferta = prodotto.id || prodotto.idOfferta || null;
+          const quantita = prodotto.quantita || 1;
+          const costoUnitario = prodotto.Crediti || prodotto.prezzo || 0;
+          const simType = prodotto.SIMTYPE || null;
+          const simCount = prodotto.SIMCOUNT || 0;
+          
+          await request
+            .input('idOrdineProdotto', sql.Int, idOrdineProdotto)
+            .input('idOfferta', sql.Int, idOfferta)
+            .input('Quantita', sql.Int, quantita)
+            .input('CostoUnitario', sql.Int, costoUnitario)
+            .input('SIMTYPE', sql.NVarChar, simType)
+            .input('SIMCOUNT', sql.Int, simCount)
+            .query(`
+              INSERT INTO dbo.tbDettagliOrdiniProdotti
+                (idOrdineProdotto, idOfferta, Quantita, CostoUnitario, SIMTYPE, SIMCOUNT)
+              VALUES
+                (@idOrdineProdotto, @idOfferta, @Quantita, @CostoUnitario, @SIMTYPE, @SIMCOUNT)
+            `);
+        }
+        
+        // Commit della transazione
+        await transaction.commit();
+        
+        res.status(201).json({
+          success: true,
+          message: 'Ordine creato con successo',
+          orderId: idOrdineProdotto
+        });
+        
+      } catch (err) {
+        // Rollback in caso di errore
+        await transaction.rollback();
+        console.error('Errore durante la creazione dell\'ordine:', err);
+        res.status(500).json({
+          success: false,
+          message: 'Errore durante la creazione dell\'ordine',
+          error: err.message
+        });
+      }
+    } catch (err) {
+      console.error('Errore nella gestione della transazione:', err);
+      res.status(500).json({
+        success: false,
+        message: 'Errore nella gestione della transazione',
+        error: err.message
+      });
+    }
+  } catch (err) {
+    console.error('Errore generale nell\'endpoint /api/ordine-agente:', err);
+    res.status(500).json({
+      success: false,
+      message: 'Errore interno del server',
+      error: err.message
+    });
+  }
+});
+
+// Middleware globale per JWT: verifica, imposta req.user, rinnova token se necessario
+app.use(async (req, res, next) => {
+  const publicRoutes = ['/api/login', '/health', '/api/test-password'];
+  if (publicRoutes.some(route => req.path.startsWith(route))) {
+    return next();
+  }
+
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) {
+    return res.status(401).json({ 
+      error: 'Token mancante',
+      code: 'MISSING_TOKEN'
+    });
+  }
+
+  try {
+    console.log('[GLOBAL AUTH] Verifica token in middleware globale...');
+    const user = jwt.verify(token, process.env.JWT_SECRET);
+    req.user = user; // <-- Imposta req.user subito dopo la verifica
+
+    // Rinnova il token se manca meno di 1 ora alla scadenza
+    const now = Math.floor(Date.now() / 1000);
+    if (user.exp - now < 3600) {
+      const newToken = jwt.sign(
+        {
+          userId: user.userId,
+          email: user.email,
+          dealerId: user.dealerId,
+          phoneNumber: user.phoneNumber
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: '2h' }
+      );
+      res.set('X-Renewed-Token', newToken);
+    }
+
+    next();
+  } catch (err) {
+    console.error('[GLOBAL AUTH] Errore verifica JWT:', err);
+    return res.status(403).json({ error: 'Token non valido o scaduto' });
+  }
+});
+
+// Configurazione avanzata per la connessione al database
+// Le opzioni di connessione sono state consolidate qui
+// Le variabili d'ambiente hanno la precedenza sui valori predefiniti
+
+// Avvia il server Express sempre, senza attendere la connessione al database
+const PORT = process.env.PORT || 3002;
+app.listen(PORT, () => {
+  console.log(`Server Express in esecuzione su http://localhost:${PORT}`);
+});
+
+
+// Endpoint pubblico per ottenere la chiave pubblica Stripe (deve essere prima di qualsiasi middleware di autenticazione!)
+app.get('/api/stripe/public-key', (req, res) => {
+  res.json({ publicKey: process.env.STRIPE_PUBLIC_KEY || '' });
+});
+
+// Endpoint per la ricarica plafond (solo carta di credito)
+app.post('/api/ricarica-plafond', authenticateToken, async (req, res) => {
+  try {
+    const { amount, emailCliente } = req.body;
+    const userId = req.user.id; // da authenticateToken
+
+    // Logica unica per CARTA DI CREDITO
+    console.log(`[DEBUG] Creazione PaymentIntent per ricarica plafond: Ricevuto body=${JSON.stringify(req.body)}`);
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Number(amount) * 100, // euro -> centesimi
+      currency: 'eur',
+      payment_method_types: ['card'],
+      metadata: { 
+        userId: String(userId), 
+        orderType: 'RIC', 
+        emailCliente: emailCliente 
+      }
+    });
+
+    res.json({ client_secret: paymentIntent.client_secret });
+
+  } catch (error) {
+    console.error('Errore durante la creazione del payment intent per ricarica:', error);
+    res.status(500).json({ error: 'Errore interno del server durante la creazione del pagamento.' });
+  }
+});
+
+// Endpoint Stripe PaymentIntent per pagamenti prodotti (importo libero)
+app.post('/api/stripe/create-product-payment-intent', express.json(), async (req, res) => {
+  try {
+    const { amount, userId, carrello, emailCliente, speseSpedizione, noteOrdine, metadata = {} } = req.body;
+    if (!amount || isNaN(Number(amount))) {
+      return res.status(400).json({ error: 'Importo non valido' });
+    }
+    if (!userId) {
+      return res.status(400).json({ error: 'userId mancante' });
+    }
+    // You can add further validation for carrello, emailCliente, etc. if needed
+    // Prepara un carrello "safe" solo con id e quantità
+    const safeCarrello = carrello && Array.isArray(carrello)
+      ? JSON.stringify(carrello.map(({ id, quantita }) => ({ id, quantita })))
+      : '';
+    // Costruisci un metadata solo con stringhe e campi semplici
+    const safeMetadata = {
+      userId: String(userId),
+      emailCliente: String(emailCliente || ''),
+      carrello: safeCarrello,
+      speseSpedizione: typeof speseSpedizione !== 'undefined' ? String(speseSpedizione) : '0',
+      noteOrdine: String(noteOrdine || ''),
+      ...Object.fromEntries(
+        Object.entries(metadata || {}).filter(([k, v]) => typeof v === 'string' || typeof v === 'number')
+      )
+    };
+    safeMetadata.carrello = safeCarrello;
+
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(Number(amount) * 100),
+      currency: 'eur',
+      payment_method_types: ['card'],
+      metadata: safeMetadata
+    });
+    res.json({ client_secret: paymentIntent.client_secret });
+  } catch (err) {
+    console.error('Errore creazione PaymentIntent prodotto:', err);
+    res.status(500).json({ error: 'Errore server Stripe' });
+  }
+});
+
+// Endpoint Stripe PaymentIntent per pagamenti carrello ecommerce (importo libero)
+app.post('/api/stripe/cart-payment-intent', express.json(), async (req, res) => {
+  try {
+    const { amount, userId, orderToken } = req.body;
+    if (!amount || isNaN(Number(amount))) {
+      return res.status(400).json({ error: 'Importo non valido' });
+    }
+    if (!userId) {
+      return res.status(400).json({ error: 'userId mancante' });
+    }
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(Number(amount) * 100),
+      currency: 'eur',
+      payment_method_types: ['card'],
+      metadata: {
+        userId: String(userId),
+        orderToken
+      }
+    });
+    res.json({ client_secret: paymentIntent.client_secret });
+  } catch (err) {
+    console.error('Errore creazione PaymentIntent carrello:', err);
+    res.status(500).json({ error: 'Errore server Stripe' });
+  }
+});
+
+// Endpoint per salvataggio pre-ordine temporaneo
+app.post('/api/order/pre-save', express.json(), async (req, res) => {
+  try {
+    const { orderToken, userId, emailCliente, carrello } = req.body;
+    if (!orderToken || !userId || !carrello) {
+      return res.status(400).json({ error: 'orderToken, userId, carrello sono obbligatori' });
+    }
+    await sql.connect(dbConfig);
+    await new sql.Request()
+      .input('OrderToken', sql.NVarChar(64), orderToken)
+      .input('UserId', sql.Int, userId)
+      .input('EmailCliente', sql.NVarChar(255), emailCliente || '')
+      .input('Carrello', sql.NVarChar(sql.MAX), carrello)
+      .query(`INSERT INTO dbo.tbOrdiniTemp (OrderToken, UserId, EmailCliente, Carrello) VALUES (@OrderToken, @UserId, @EmailCliente, @Carrello)`);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error('[PRE-SAVE ERROR]', err);
+    res.status(500).json({ error: 'Errore nel salvataggio pre-ordine' });
+  }
+});
+
+// Endpoint richiesta bonifico (solo log)
+app.post('/api/bonifico-request', express.json(), (req, res) => {
+  const { amount, userId } = req.body;
+  console.log('Richiesta bonifico:', { amount, userId });
+  res.json({ ok: true });
+});
+
+
+
+// Endpoint rimosso: era un duplicato del webhook Stripe (vedi riga 131)
+
+// Endpoint di test semplice
+app.get('/api/test', (req, res) => {
+  res.json({ status: 'ok', message: 'Il server è in esecuzione' });
+});
+
+// Endpoint per la dashboard: ultime 5 attivazioni
+app.use('/api/ultime-attivazioni', (req, res, next) => {
+  console.log(`[PRE-AUTH LOG] Richiesta ricevuta per /api/ultime-attivazioni. Header Auth: ${req.headers['authorization']}`);
+  next();
+});
+app.get('/api/ultime-attivazioni', authenticateToken, async (req, res) => {
+  try {
+    // Estrai il token JWT dall'header Authorization
+    // Dati utente già disponibili grazie al middleware authenticateToken
+    const dealerId = req.user.dealerId;
+    if (!dealerId) {
+      return res.status(401).json({ error: 'ID dealer non valido nel token' });
+    }
+    await sql.connect(dbConfig);
+    const request = new sql.Request();
+    request.input('idDealer', sql.Int, dealerId);
+    // Logica filtro operatore per la dashboard
+    let query;
+    const operatore = req.query.operatore;
+    if (operatore === 'SKY') {
+      query = `
+        SELECT TOP 5
+          CONVERT(VARCHAR(10), o.DataOra, 120) AS Data,
+          offr.Titolo AS Titolo,
+          offr.Tipo AS Tipo,
+          offr.Segmento AS Segmento,
+          so.StatoEsteso AS Stato
+        FROM dbo.tbOrdini o
+        LEFT JOIN dbo.tbStatiOrdini so ON o.Stato = so.IDStato
+        LEFT JOIN dbo.TbOfferte offr ON o.idOfferta = offr.IDOfferta
+        WHERE o.idDealer = @idDealer
+          AND offr.idOperatore IN (3, 8, 12, 14)
+        ORDER BY o.DataOra DESC`;
+    } else if (operatore === 'ILIAD') {
+      query = `
+        SELECT TOP 5
+          CONVERT(VARCHAR(10), o.DataOra, 120) AS Data,
+          offr.Titolo AS Titolo,
+          offr.Tipo AS Tipo,
+          offr.Segmento AS Segmento,
+          so.StatoEsteso AS Stato
+        FROM dbo.tbOrdini o
+        LEFT JOIN dbo.tbStatiOrdini so ON o.Stato = so.IDStato
+        LEFT JOIN dbo.TbOfferte offr ON o.idOfferta = offr.IDOfferta
+        WHERE o.idDealer = @idDealer
+          AND offr.idOperatore IN (5)
+        ORDER BY o.DataOra DESC`;
+    } else if (operatore === 'KENA MOBILE') {
+      query = `
+        SELECT TOP 5
+          CONVERT(VARCHAR(10), o.DataOra, 120) AS Data,
+          offr.Titolo AS Titolo,
+          offr.Tipo AS Tipo,
+          offr.Segmento AS Segmento,
+          so.StatoEsteso AS Stato
+        FROM dbo.tbOrdini o
+        LEFT JOIN dbo.tbStatiOrdini so ON o.Stato = so.IDStato
+        LEFT JOIN dbo.TbOfferte offr ON o.idOfferta = offr.IDOfferta
+        WHERE o.idDealer = @idDealer
+          AND offr.idOperatore IN (6)
+        ORDER BY o.DataOra DESC`;
+    } else if (operatore === 'WEEDOO') {
+      query = `
+        SELECT TOP 5
+          CONVERT(VARCHAR(10), o.DataOra, 120) AS Data,
+          offr.Titolo AS Titolo,
+          offr.Tipo AS Tipo,
+          offr.Segmento AS Segmento,
+          so.StatoEsteso AS Stato
+        FROM dbo.tbOrdini o
+        LEFT JOIN dbo.tbStatiOrdini so ON o.Stato = so.IDStato
+        LEFT JOIN dbo.TbOfferte offr ON o.idOfferta = offr.IDOfferta
+        WHERE o.idDealer = @idDealer
+          AND offr.idOperatore IN (13)
+        ORDER BY o.DataOra DESC`;
+    } else if (operatore === '1MOBILE') {
+      query = `
+        SELECT TOP 5
+          CONVERT(VARCHAR(10), o.DataOra, 120) AS Data,
+          offr.Titolo AS Titolo,
+          offr.Tipo AS Tipo,
+          offr.Segmento AS Segmento,
+          so.StatoEsteso AS Stato
+        FROM dbo.tbOrdini o
+        LEFT JOIN dbo.tbStatiOrdini so ON o.Stato = so.IDStato
+        LEFT JOIN dbo.TbOfferte offr ON o.idOfferta = offr.IDOfferta
+        WHERE o.idDealer = @idDealer
+          AND offr.idOperatore IN (7)
+        ORDER BY o.DataOra DESC`;
+    } else if (operatore === 'FASTWEB') {
+      query = `
+        WITH CTE_OrdiniUnici AS (
+            SELECT
+                CONVERT(VARCHAR(10), i.[Data Inserimento Ordine], 105) AS Data,
+                i.Valore AS Valore,
+                i.[FiscalCodeOrPiva] AS CodiceFiscale,
+                i.Segmento AS Segmento,
+                i.[Codice Ordine] AS CodiceOrdine,
+                i.[Stato dell'Ordine OM] AS StatoOrdine,
+                i.Contributo,
+                i.[Tipo Ordine] AS TipoOrdine,
+                i.Canone,
+                ROW_NUMBER() OVER (PARTITION BY i.[Codice Ordine] ORDER BY i.[Data Inserimento Ordine] DESC) AS rn
+            FROM dbo.InseritoFW i
+            INNER JOIN dbo.tbDealers d 
+                ON i.[Codice Comsy Tecnico Attuale] = d.COMSY1
+                OR i.[Codice Comsy Tecnico Attuale] = d.COMSY2
+            WHERE d.idDealer = @idDealer
+        )
+        SELECT TOP 5
+            Data,
+            LEFT(Valore, 30) AS Titolo,
+            TipoOrdine AS Tipo,
+            Segmento,
+            StatoOrdine AS Stato,
+            CodiceOrdine,
+            Contributo,
+            TipoOrdine,
+            Canone
+        FROM CTE_OrdiniUnici
+        WHERE rn = 1
+        ORDER BY Data DESC`;
+    } else if (operatore === 'FASTWEB ENERGIA') {
+      query = `
+        WITH CTE_ContrattiUnici AS (
+            SELECT
+                CONVERT(VARCHAR(10), f.[DataBatch], 105) AS Data,
+                f.[Codice Contratto] AS CodiceContratto,
+                f.[Codice POD] AS CodicePOD,
+                f.[Tipo Cliente] AS TipoCliente,
+                f.Segmento,
+                f.[Stato Contratto] AS StatoContratto,
+                f.[Stato Fornitura Luce] AS StatoFornitura,
+                f.[Tipo Vendita] AS TipoVendita,
+                f.[Tipo Passaggio] AS TipoPassaggio,
+                f.[Nome Offerta Vendita] AS NomeOfferta,
+                ROW_NUMBER() OVER (PARTITION BY f.[Codice Contratto] ORDER BY f.[DataBatch] DESC) AS rn
+            FROM dbo.FWEnergiaimporter f
+            INNER JOIN dbo.tbDealers d 
+                ON f.[Codice Comsy/Order Owner (Report!DBSELLER)] = d.COMSY1
+                OR f.[Codice Comsy/Order Owner (Report!DBSELLER)] = d.COMSY2
+            WHERE d.idDealer = @idDealer
+        )
+        SELECT TOP 5
+            Data,
+            o.Titolo,
+            CodicePOD AS Tipo,
+            Segmento,
+            StatoContratto AS Stato,
+            StatoFornitura,
+            TipoCliente,
+            TipoVendita,
+            TipoPassaggio,
+            f.[Nome Offerta Vendita] AS NomeOfferta
+        FROM CTE_ContrattiUnici
+        WHERE rn = 1
+        ORDER BY Data DESC`;
+    } else if (operatore) {
+      query = `
+        SELECT TOP 5
+          CONVERT(VARCHAR(10), o.DataOra, 120) AS Data,
+          offr.Titolo AS Titolo,
+          offr.Tipo AS Tipo,
+          offr.Segmento AS Segmento,
+          so.StatoEsteso AS Stato
+        FROM dbo.tbOrdini o
+        LEFT JOIN dbo.tbStatiOrdini so ON o.Stato = so.IDStato
+        LEFT JOIN dbo.TbOfferte offr ON o.idOfferta = offr.IDOfferta
+        WHERE o.idDealer = @idDealer
+          AND offr.idOperatore = (SELECT TOP 1 IDOperatore FROM dbo.tbOperatori2 WHERE UPPER(Nome) = UPPER(@operatore))
+        ORDER BY o.DataOra DESC`;
+      request.input('operatore', sql.NVarChar, operatore);
+    } else {
+      query = `
+        SELECT TOP 5
+          CONVERT(VARCHAR(10), o.DataOra, 120) AS Data,
+          offr.Titolo AS Titolo,
+          offr.Tipo AS Tipo,
+          offr.Segmento AS Segmento,
+          so.StatoEsteso AS Stato
+        FROM dbo.tbOrdini o
+        LEFT JOIN dbo.tbStatiOrdini so ON o.Stato = so.IDStato
+        LEFT JOIN dbo.TbOfferte offr ON o.idOfferta = offr.IDOfferta
+        WHERE o.idDealer = @idDealer
+        ORDER BY o.DataOra DESC`;
+    }
+    const result = await request.query(query);
+    res.json({ attivazioni: result.recordset || [] });
+  } catch (err) {
+    console.error('Errore in /api/ultime-attivazioni:', err);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  }
+});
+
+// Endpoint di debug connessione DB
+app.get('/api/debug-db', async (req, res) => {
+  try {
+    const sql = require('mssql');
+    const pool = await sql.connect(dbConfig);
+    const result = await pool.request().query('SELECT 1 as test');
+    res.json({ status: 'success', result: result.recordset });
+  } catch (err) {
+    res.status(500).json({ status: 'error', error: err, message: err.message });
+  }
+});
+
+// Endpoint di verifica della connessione al database
+app.get('/api/check-db', async (req, res) => {
+  try {
+    const sql = require('mssql');
+    const pool = await sql.connect(dbConfig);
+    const result = await pool.request().query('SELECT name FROM sys.databases');
+    res.json({
+      status: 'success',
+      databases: result.recordset,
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Errore nel test del database:', error);
+    res.status(500).json({
+      status: 'error',
+      message: 'Errore durante il test del database',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Endpoint di verifica della connessione al database specifico
+app.get('/api/check-db-connection', async (req, res) => {
+  try {
+    const pool = await sql.connect(dbConfig);
+    await pool.request().query('SELECT 1');
+    res.json({ status: 'success', message: 'Connessione al database riuscita' });
+  } catch (err) {
+    res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+// Endpoint temporaneo per testare la verifica password ASP.NET Identity
+app.post('/api/test-password', express.json(), (req, res) => {
+  const { password, hash } = req.body;
+  try {
+    const result = aspnetIdentityPw.validatePassword(password, hash);
+    res.json({ valid: result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// CORS middleware per sviluppo
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(200);
+  }
+  next();
+});
+
+app.use(express.json());
+
+// Endpoint per restituire i templates
+import * as fs from 'fs/promises';
+app.get('/api/templates', async (req, res) => {
+  try {
+    const data = await fs.readFile('/home/ubuntu/backend/templates.json', 'utf8');
+    res.json(JSON.parse(data));
+  } catch (err) {
+    res.status(500).json({ error: 'Impossibile leggere templates.json', details: err.message });
+  }
+});
+
+// Endpoint per il controllo dello stato del server
+app.get('/health', async (req, res) => {
+  try {
+    // Verifica la connessione al database
+    await sql.query('SELECT 1');
+    
+    res.json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
+      database: 'connected'
+    });
+  } catch (error) {
+    console.error('Health check failed:', error);
+    res.status(500).json({
+      status: 'error',
+      error: 'Database connection failed',
+      details: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+app.post('/api/login', express.json(), async (req, res) => {
+  console.log('Richiesta di login ricevuta:', {
+    headers: req.headers,
+    body: req.body,
+    ip: req.ip,
+    method: req.method,
+    url: req.originalUrl
+  });
+
+  const { username, email, password } = req.body;
+  const loginIdentifier = email || username;
+
+  if (!loginIdentifier || !password) {
+    console.log('Credenziali mancanti:', {
+      email: !!email,
+      username: !!username,
+      password: !!password
+    });
+    return res.status(400).json({
+      error: 'Credenziali mancanti',
+      message: 'Inserisci email/username e password'
+    });
+  }
+
+  try {
+    await sql.connect(dbConfig);
+    let userType = null;
+    let user = null;
+    let ruoli = [];
+    let agenteNome = null;
+
+    // 1. Prova login come agente (ASP.NET Identity)
+    let agentResult = await new sql.Request()
+      .input('username', sql.NVarChar, loginIdentifier)
+      .query(`SELECT TOP 1 * FROM dbo.AspNetUsers WHERE UserName = @username OR Email = @username`);
+    if (agentResult.recordset && agentResult.recordset.length > 0) {
+      userType = 'agente';
+      user = agentResult.recordset[0];
+      console.log('[LOGIN] Utente agente trovato:', user);
+      // Verifica password hash ASP.NET Identity
+      const hash = user.PasswordHash;
+      // Recupera ruoli e verifica se l'utente ha il ruolo AGENTE normalizzato
+      const agentRoleResult = await new sql.Request()
+        .input('userId', sql.NVarChar, user.Id)
+        .query(`SELECT r.Name, r.NormalizedName FROM dbo.AspNetUserRoles ur JOIN dbo.AspNetRoles r ON ur.RoleId = r.Id WHERE ur.UserId = @userId`);
+      ruoli = agentRoleResult.recordset.map(r => r.Name);
+      const isAgente = agentRoleResult.recordset.some(r => r.NormalizedName === 'AGENTE');
+      // Check for 'AGENTE' role
+      if (!isAgente) {
+        console.log('[LOGIN] Utente AspNetUsers senza ruolo "agenti", passo a dealer:', loginIdentifier);
+        // Skip agent login, proceed to dealer login logic
+      } else {
+        // Verifica password hash ASP.NET Identity SOLO se ha ruolo 'agenti'
+        const hash = user.PasswordHash;
+        const isPasswordValid = await aspnetIdentityPw.validatePassword(password, hash);
+        if (!isPasswordValid) {
+          console.log('[LOGIN] Password non valida per agente:', loginIdentifier);
+          return res.status(401).json({
+            error: 'Credenziali non valide',
+            message: 'La password inserita non è corretta.'
+          });
+        }
+        // Recupera nome agente se presente
+        agenteNome = user.Nome || user.UserName || null;
+        // Genera JWT
+        const tokenPayload = {
+          userId: user.Id,
+          email: user.Email,
+          ruoli,
+          agenteNome
+        };
+        console.log('[LOGIN] Generazione token per agente:', tokenPayload);
+        const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '2h' });
+        return res.json({
+          token,
+          ruoli,
+          agenteNome: agenteNome,
+          userType: 'agente'
+        });
+      }
+    }
+
+    // 2. Prova login come dealer (legacy)
+    const request = new sql.Request();
+    request.input('email', sql.NVarChar, loginIdentifier);
+    const query = `SELECT * FROM dbo.tbDealers WHERE RecapitoEmail = @email`;
+    console.log('Esecuzione query dealer:', query, 'con email:', loginIdentifier);
+    const result = await request.query(query);
+    if (!result.recordset || result.recordset.length === 0) {
+      console.log('Nessun dealer trovato per email:', loginIdentifier);
+      return res.status(401).json({
+        error: 'Credenziali non valide',
+        message: 'Nessun account trovato con questa email.'
+      });
+    }
+    const dealer = result.recordset[0];
+    // Password in chiaro (legacy)
+    const isPasswordValid = password === dealer.TmpPasswd;
+    if (!isPasswordValid) {
+      console.log('Password non valida per il dealer:', dealer.RecapitoEmail);
+      return res.status(401).json({
+        error: 'Credenziali non valide',
+        message: 'La password inserita non è corretta.'
+      });
+    }
+    // Dealer: genera JWT senza ruoli
+    const tokenPayload = {
+      userId: dealer.IDDealer,
+      email: dealer.RecapitoEmail,
+      dealerId: dealer.IDDealer,
+      phoneNumber: dealer.RecapitoCell || '',
+      ruoli: [],
+      dealerName: dealer.RagioneSociale || dealer.RecapitoEmail
+    };
+    const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '2h' });
+    // Formatta telefono
+    let phoneNumber = 'web_user';
+    if (dealer.RecapitoCell) {
+      const cleanNumber = dealer.RecapitoCell.replace(/\D/g, '').slice(-10);
+      if (cleanNumber.length === 10) {
+        phoneNumber = '39' + cleanNumber;
+      }
+    }
+    return res.json({
+      token,
+      dealerName: dealer.RagioneSociale || dealer.RecapitoEmail,
+      phoneNumber,
+      userType: 'dealer',
+      ruoli: []
+    });
+  } catch (err) {
+    console.error('Errore durante il login:', err);
+    res.status(500).json({
+      error: 'Errore server',
+      details: err.message,
+      stack: process.env.NODE_ENV === 'development' ? err.stack : undefined
+    });
+  }
+});
+
+app.get('/api/attivazioni', authenticateToken, async (req, res) => {
+  try {
+    // Estrai il token JWT dall'header Authorization
+    const authHeader = req.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Token mancante' });
+    }
+    const token = authHeader.split(' ')[1];
+    let decoded;
+    try {
+      // Token già verificato dal middleware; dati utente disponibili in req.user
+      if (!req.user.userId) {
+        return res.status(401).json({ error: 'Token non valido: userId mancante' });
+      }
+    } catch (err) {
+      return res.status(401).json({ error: 'Token non valido o scaduto' });
+    }
+
+    // Usa dealerId dal token JWT
+    const dealerId = req.user.dealerId;
+    if (!dealerId) {
+      return res.status(401).json({ error: 'ID dealer non valido' });
+    }
+
+    console.log('Esecuzione query attivazioni per dealer ID:', dealerId);
+    
+    try {
+      // Trova la ragione sociale del dealer
+      await sql.connect(dbConfig);
+      const request = new sql.Request();
+      request.input('idDealer', sql.Int, dealerId);
+      const dealerQuery = `SELECT RagioneSociale FROM dbo.tbDealers WHERE IDDealer = @idDealer`;
+      const dealerRes = await request.query(dealerQuery);
+      
+      if (!dealerRes.recordset.length) {
+        return res.status(404).json({ error: 'Dealer non trovato' });
+      }
+      
+      const ragioneSociale = dealerRes.recordset[0].RagioneSociale;
+      
+      // Query per ottenere le ultime 5 attivazioni
+      const query = `
+        SELECT TOP 5
+          CONVERT(VARCHAR(10), o.DataOra, 120) AS Data,
+          offr.Titolo AS Titolo,
+          offr.Tipo AS Tipo,
+          offr.Segmento AS Segmento,
+          so.StatoEsteso AS Stato
+        FROM dbo.tbOrdini o
+        LEFT JOIN dbo.tbStatiOrdini so ON o.Stato = so.IDStato
+        LEFT JOIN dbo.TbOfferte offr ON o.idOfferta = offr.IDOfferta
+        WHERE o.idDealer = @idDealer
+        ORDER BY o.DataOra DESC`;
+      
+      console.log('Esecuzione query attivazioni:', query);
+      
+      const result = await request.query(query);
+      
+      console.log('Risultati query attivazioni:', JSON.stringify(result.recordset, null, 2));
+      
+      return res.json({ 
+        ragioneSociale, 
+        attivazioni: result.recordset || [] 
+      });
+      
+    } catch (err) {
+      console.error('Errore durante l\'esecuzione della query attivazioni:', err);
+      throw err; // Rilancia l'errore per la gestione nel blocco catch esterno
+    }
+  } catch (err) {
+    console.error('Errore in /api/attivazioni:', err);
+    // Verifica se la risposta è già stata inviata
+    if (!res.headersSent) {
+      return res.status(500).json({ 
+        error: 'Errore del server', 
+        details: err.message,
+        code: err.code
+      });
+    } else {
+      console.error('Tentativo di inviare una risposta multipla per la stessa richiesta');
+    }
+  }
+});
+
+app.get('/api/ordini', authenticateToken, async (req, res) => {
+  try {
+    // Estrai il token JWT dall'header Authorization
+    const authHeader = req.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Token mancante' });
+    }
+    const token = authHeader.substring(7);
+    let email;
+    try {
+      const // Token già verificato dal middleware; dati utente disponibili in req.user
+      email = req.user.email;
+    } catch (err) {
+      return res.status(401).json({ error: 'Token non valido' });
+    }
+    await sql.connect(dbConfig);
+    const request = new sql.Request();
+    request.input('email', sql.NVarChar, email);
+    // Trova idDealer e RagioneSociale dell'utente loggato
+    const dealerQuery = `SELECT TOP 1 IDDealer, RagioneSociale FROM dbo.tbDealers WHERE RecapitoEmail = @email`;
+    const dealerRes = await request.query(dealerQuery);
+    if (!dealerRes.recordset.length) {
+      return res.status(404).json({ error: 'Dealer non trovato per questa email' });
+    }
+    const idDealer = dealerRes.recordset[0].IDDealer;
+    const ragioneSociale = dealerRes.recordset[0].RagioneSociale;
+    // Query per ultimi 5 ordini del dealer
+    request.input('idDealer', sql.Int, idDealer);
+    const query = `
+      SELECT TOP 5
+        CONVERT(VARCHAR(10), op.DataOra, 120) AS Data,
+        of.Titolo AS Prodotto,
+        of.Tipo AS Tipo,
+        op.TotaleOrdine AS Importo,
+        op.SpeseSpedizione,
+        op.idStatoOrdineProdotto AS Stato
+      FROM dbo.tbOrdiniProdotti op
+      LEFT JOIN dbo.tbOfferte of ON op.idOfferta = of.IDOfferta
+      WHERE op.idDealer = @idDealer
+      ORDER BY op.DataOra DESC`;
+
+    try {
+      const result = await request.query(query);
+      res.json({ ragioneSociale, ordini: result.recordset });
+    } catch (err) {
+      console.error('ERRORE QUERY ORDINI:', err.message, err.stack);
+      res.status(500).json({ error: 'Errore server nella query ordini', details: err.message });
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  }
+});
+
+
+// --- API: ULTIMI ORDINI ---
+// GET /api/ultimi-ordini
+app.get('/api/ultimi-ordini', authenticateToken, async (req, res) => {
+  try {
+    // Autenticazione JWT
+    const authHeader = req.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Token mancante' });
+    }
+    
+    const token = authHeader.split(' ')[1];
+    let decoded;
+    try {
+      // Token già verificato dal middleware; dati utente disponibili in req.user
+      if (!req.user.userId) {
+        return res.status(401).json({ error: 'Token non valido: userId mancante' });
+      }
+    } catch (err) {
+      return res.status(401).json({ error: 'Token non valido o scaduto' });
+    }
+
+    // Usa dealerId dal token JWT
+    const dealerId = req.user.dealerId;
+    if (!dealerId) {
+      return res.status(401).json({ error: 'ID dealer non valido' });
+    }
+
+    console.log('Esecuzione query ultimi ordini per dealer ID:', dealerId);
+    await sql.connect(dbConfig);
+    const request = new sql.Request();
+    request.input('idDealer', sql.Int, dealerId);
+    
+    const query = `
+      SELECT TOP 5
+        CONVERT(VARCHAR(10), o.DataOra, 120) AS Data,
+        offr.Titolo AS Prodotto,
+        offr.Tipo AS Tipo,
+        o.TotaleOrdine AS Importo,
+        o.SpeseSpedizione,
+        so.StatoEsteso AS Stato
+      FROM dbo.tbOrdiniProdotti o
+      LEFT JOIN dbo.tbStatiOrdiniProdotti so ON o.idStatoOrdineProdotto = so.IDStato
+      LEFT JOIN dbo.tbDettagliOrdiniProdotti dop ON o.IDOrdineProdotto = dop.idOrdineProdotto
+      LEFT JOIN dbo.tbOfferte offr ON dop.idOfferta = offr.IDOfferta
+      WHERE o.idDealer = @idDealer
+      ORDER BY o.DataOra DESC`;
+      
+    console.log('Esecuzione query ultimi ordini per dealer:', req.user.userId);
+    const result = await request.query(query);
+
+    console.log('Risultati query:', JSON.stringify(result.recordset, null, 2));
+    
+    if (!result.recordset || result.recordset.length === 0) {
+      console.log('Nessun risultato dalla query');
+      return res.json({ ordini: [] });
+    }
+    
+    return res.json({ ordini: result.recordset });
+      
+  } catch (err) {
+    console.error('Errore in /api/ultimi-ordini:', err);
+    // Verifica se la risposta è già stata inviata
+    if (!res.headersSent) {
+      return res.status(500).json({ 
+        error: 'Errore del server', 
+        details: err.message,
+        code: err.code
+      });
+    } else {
+      console.error('Tentativo di inviare una risposta multipla per la stessa richiesta');
+    }
+  }
+});
+
+// --- API: DOCUMENTAZIONE ---
+// GET /api/documentazione
+app.get('/api/documentazione', async (req, res) => {
+  try {
+    // Autenticazione JWT
+    const authHeader = req.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Token mancante' });
+    }
+    const token = authHeader.substring(7);
+    try {
+      jwt.verify(token, 'TUO_JWT_SECRET');
+    } catch (err) {
+      return res.status(401).json({ error: 'Token non valido' });
+    }
+    await sql.connect(dbConfig);
+    const query = 'SELECT IDFile, Operatore, Titolo, Link FROM dbo.tbFiles ORDER BY Operatore, Titolo';
+    const result = await sql.query(query);
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('/api/documentazione error:', err);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  }
+});
+
+// --- ECOMMERCE: API PRODOTTI ---
+// GET /api/prodotti?segmento=SIM&idOperatore=11
+app.get('/api/prodotti', authenticateToken, async (req, res) => {
+  try {
+    // L'autenticazione JWT è già gestita dal middleware authenticateToken
+    const { segmento, idOperatore } = req.query;
+    if (!segmento || !idOperatore) {
+      return res.status(400).json({ error: 'Parametro segmento e idOperatore obbligatori' });
+    }
+
+    // Mappa FIN -> CELL per la ricerca DB
+    let segmentoDb = segmento;
+    if (segmento === 'FIN') segmentoDb = 'CELL';
+
+    await sql.connect(dbConfig);
+    const request = new sql.Request();
+    request.input('segmento', sql.NVarChar, segmentoDb);
+    request.input('idOperatore', sql.Int, parseInt(idOperatore, 10));
+
+    const query = `
+      SELECT
+        IDOfferta AS id,
+        Titolo AS nome,
+        DescrizioneBreve AS descrizione,
+        Crediti AS prezzo,
+        LogoLink,
+        Segmento AS segmento,
+        idOperatore,
+        LimiteSIM AS disponibilita,
+        Tipo AS categoria,
+        ISNULL(SpeseSpedizione, 0) AS SpeseSpedizione
+      FROM dbo.tbOfferte
+      WHERE tipoOfferta = 4
+        AND Segmento = @segmento
+        AND idOperatore = @idOperatore
+        AND (OnlyFor IS NULL OR OnlyFor = '')
+        AND ISNULL(Offerta_Inviata, 1) = 1
+        AND ISNULL([ValidaDal], GETDATE()) <= GETDATE()
+        AND ISNULL([ValidaAl], GETDATE()) >= GETDATE()
+    `;
+    const result = await request.query(query);
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('/api/prodotti error:', err);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  }
+});
+
+// --- API: TEMPLATE DINAMICO OFFERTA ---
+// GET /api/template-offerta/:idOfferta
+app.get('/api/template-offerta/:idOfferta', authenticateToken, async (req, res) => {
+  try {
+    // Autenticazione JWT
+    const authHeader = req.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Token mancante' });
+    }
+    const token = authHeader.substring(7);
+    try {
+      jwt.verify(token, 'TUO_JWT_SECRET');
+    } catch (err) {
+      return res.status(401).json({ error: 'Token non valido' });
+    }
+    const idOfferta = req.params.idOfferta;
+    if (!idOfferta) return res.status(400).json({ error: 'idOfferta obbligatorio' });
+    await sql.connect(dbConfig);
+    const request = new sql.Request();
+    request.input('id', sql.Int, parseInt(idOfferta, 10));
+    const query = 'SELECT TemplateDatiOfferta FROM dbo.tbOfferte WHERE IDOfferta = @id';
+    const result = await request.query(query);
+    if (!result.recordset.length || !result.recordset[0].TemplateDatiOfferta) {
+      return res.status(404).json({ error: 'Nome template non trovato per questa offerta' });
+    }
+    const nomeTemplate = result.recordset[0].TemplateDatiOfferta;
+    const fs = require('fs');
+    let templatesData;
+    try {
+      templatesData = fs.readFileSync(__dirname + '/templates.json', 'utf-8');
+    } catch (err) {
+      return res.status(500).json({ error: 'Impossibile leggere templates.json', details: err.message });
+    }
+    let templatesArr;
+    try {
+      templatesArr = JSON.parse(templatesData);
+    } catch (err) {
+      return res.status(500).json({ error: 'templates.json non valido', details: err.message });
+    }
+    const template = templatesArr.find(t => t.template === nomeTemplate);
+    if (!template) {
+      return res.status(404).json({ error: 'Template non trovato in templates.json' });
+    }
+    res.json(template);
+  } catch (err) {
+    console.error('/api/template-offerta error:', err);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  }
+});
+
+// Endpoint chat semplice per bot
+app.post('/webchat', express.json(), async (req, res) => {
+  const { text, user_id } = req.body;
+  // Qui puoi collegare la tua logica bot, per ora rispondiamo con un echo
+  let reply = `Hai scritto: ${text}`;
+  // Esempio: if(text.match(/ciao/i)) reply = 'Ciao! Come posso aiutarti?';
+  res.json({ reply });
+});
+
+// Endpoint per salvare la cronologia chat
+app.post('/webchat/history', express.json(), async (req, res) => {
+  const { user_id, history } = req.body;
+  if (!user_id || !Array.isArray(history)) return res.status(400).json({ error: 'Dati mancanti' });
+  try {
+    await sql.connect(dbConfig);
+    // Upsert: aggiorna se esiste, altrimenti inserisci
+    const check = await sql.query`SELECT COUNT(*) as cnt FROM tbChatHistory WHERE UserId = ${user_id}`;
+    if (check.recordset[0].cnt > 0) {
+      await sql.query`UPDATE tbChatHistory SET History = ${JSON.stringify(history)} WHERE UserId = ${user_id}`;
+    } else {
+      await sql.query`INSERT INTO tbChatHistory (UserId, History) VALUES (${user_id}, ${JSON.stringify(history)})`;
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'Errore salvataggio cronologia', details: e.message });
+  }
+});
+
+// Endpoint per recuperare la cronologia chat
+app.get('/webchat/history', async (req, res) => {
+  const user_id = req.query.user_id;
+  if (!user_id) return res.status(400).json({ error: 'user_id mancante' });
+  try {
+    await sql.connect(dbConfig);
+    const result = await sql.query`SELECT TOP 1 History FROM tbChatHistory WHERE UserId = ${user_id}`;
+    if (result.recordset.length) {
+      res.json({ history: JSON.parse(result.recordset[0].History) });
+    } else {
+      res.json({ history: [] });
+    }
+  } catch (e) {
+    res.status(500).json({ error: 'Errore recupero cronologia', details: e.message });
+  }
+});
+
+// Endpoint proxy per gestire le richieste CORS
+app.post('/api/proxy/chat', express.json(), async (req, res) => {
+  try {
+    // Estrai il token JWT dall'header Authorization
+    const authHeader = req.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Token mancante' });
+    }
+    
+    // Dati utente già disponibili grazie al middleware authenticateToken
+    const userId = req.user.phoneNumber || 'web_user';
+    const { text } = req.body; 
+    
+    if (!text) {
+      return res.status(400).json({ error: 'Testo del messaggio mancante' });
+    }
+    
+    console.log(`Inoltro messaggio al bot da ${userId}:`, text);
+    
+    const response = await axios.post('https://bot.kimweb.agency/from-site', {
+      text,
+      user_id: userId
+    });
+    
+    res.json(response.data);
+  } catch (error) {
+    console.error('Errore nella comunicazione con il bot:', error.message);
+    res.status(500).json({
+      reply: 'Al momento non riesco a contattare il servizio di assistenza. Riprova tra qualche minuto.'
+    });
+  }
+});
+
+app.get('/api/credito-plafond', authenticateToken, async (req, res) => {
+  console.log('--- /api/credito-plafond chiamato ---');
+  try {
+    const idDealer = req.user.dealerId;
+    if (!idDealer) {
+      console.error('ID dealer non trovato nel token JWT (req.user)');
+      return res.status(401).json({ error: 'ID dealer non valido nel token' });
+    }
+    console.log('IDDealer da req.user:', idDealer);
+    
+    try {
+      // La connessione al database è gestita dal middleware globale
+      const request = new sql.Request();
+      // Query per il credito
+      request.input('idDealer', sql.Int, idDealer);
+      const creditoQuery = `
+        SELECT ISNULL(SUM(t.crediti), 0) AS credito
+        FROM dbo.tbtransazioni t
+        JOIN dbo.tbdealers d ON t.iddealer = d.iddealer
+        WHERE d.iddealer = @idDealer
+      `;
+      
+      console.log('Eseguo creditoQuery:', creditoQuery, 'con idDealer:', idDealer);
+      const creditoRes = await request.query(creditoQuery);
+      console.log('Risultato creditoRes:', JSON.stringify(creditoRes.recordset, null, 2));
+      
+      const credito = creditoRes.recordset[0].credito || 0;
+      console.log('Credito calcolato:', credito);
+      // Restituisci il credito in euro (già in euro in tabella)
+      res.json({ credito });
+    } catch (err) {
+      console.error('ERRORE /api/credito-plafond:', err.message, err.stack, err);
+      res.status(500).json({ error: 'Errore server', details: err.message, stack: err.stack });
+    }
+  } catch (err) {
+    console.error('ERRORE GRAVE /api/credito-plafond:', err.message, err.stack, err);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  }
+});
+
+// Endpoint per ottenere gli operatori principali (con SKY raggruppato)
+app.get('/api/operatori', authenticateToken, async (req, res) => {
+  try {
+    await sql.connect(dbConfig);
+    
+    // Ottieni tutti gli operatori tranne quelli esclusi
+    const result = await sql.query`
+      SELECT IDOperatore as id, Denominazione as nome, 
+             CASE WHEN IDOperatore IN (3, 8, 12, 14) THEN 1 ELSE 0 END as isSky
+      FROM dbo.tbOperatori2 
+      WHERE IDOperatore NOT IN (4, 10, 11)  -- Escludi RABONA, ASSISTENZA, PRODOTTI
+      ORDER BY isSky DESC, Denominazione`;
+    
+    // Raggruppa gli operatori SKY in un unico oggetto
+    const operatori = [];
+    const skyOperators = [];
+    
+    result.recordset.forEach(op => {
+      if (op.isSky) {
+        skyOperators.push({
+          id: op.id,
+          nome: op.nome
+        });
+      } else {
+        operatori.push({
+          id: op.id,
+          nome: op.nome
+        });
+      }
+    });
+    
+    // Aggiungi l'opzione SKY all'inizio
+    if (skyOperators.length > 0) {
+      operatori.unshift({
+        id: 'SKY',
+        nome: 'SKY',
+        isSkyGroup: true
+      });
+    }
+    
+    res.json(operatori);
+  } catch (err) {
+    console.error('Errore in /api/operatori:', err);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  }
+});
+
+// Endpoint per ottenere i sottotipi SKY
+app.get('/api/sky-tipi', async (req, res) => {
+  // TODO: implementare endpoint reale se necessario
+  res.json([]);
+});
+
+// Endpoint per ottenere le tipologie disponibili per un operatore
+app.get('/api/tipologie', authenticateToken, async (req, res) => {
+  try {
+    const { operatore } = req.query;
+    if (!operatore) {
+      return res.status(400).json({ error: 'Parametro operatore obbligatorio' });
+    }
+    await sql.connect(dbConfig);
+
+    // Ricava tutte le tipologie disponibili per quell’operatore dalle offerte attive
+    let result;
+    if (parseInt(operatore) === 6) {
+      // KENA MOBILE: nessun filtro aggiuntivo
+      result = await sql.query`
+        SELECT DISTINCT
+          CASE
+            WHEN o.Segmento = 'RES' THEN 'RESIDENZIALE'
+            WHEN o.Segmento = 'SHP' THEN 'BUSINESS'
+            ELSE o.Segmento
+          END AS tipologia
+        FROM dbo.tbOfferte o
+        WHERE o.idOperatore = 6
+      `;
+    } else {
+      result = await sql.query`
+        SELECT DISTINCT
+          CASE
+            WHEN o.Segmento = 'RES' THEN 'RESIDENZIALE'
+            WHEN o.Segmento = 'SHP' THEN 'BUSINESS'
+            ELSE o.Segmento
+          END AS tipologia
+        FROM dbo.tbOfferte o
+        WHERE o.idOperatore = ${parseInt(operatore)}
+          AND o.Segmento != 'FIN'
+          AND (o.OnlyFor IS NULL OR o.OnlyFor = '')
+          AND ISNULL(o.Offerta_Inviata, 1) = 1
+          AND ISNULL(o.ValidaDal, GETDATE()) <= GETDATE()
+          AND ISNULL(o.ValidaAl, GETDATE()) >= GETDATE()
+      `;
+    }
+    const tipologie = result.recordset.map(r => r.tipologia);
+    res.json(tipologie);
+  } catch (err) {
+    console.error('Errore in /api/tipologie:', err);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  }
+});
+// Endpoint per ottenere le offerte filtrate per operatore e tipologia
+app.get('/api/offerte', authenticateToken, async (req, res) => {
+  try {
+    const { operatore, tipologia, segmento } = req.query;
+    
+    // Se c'è il parametro segmento, usa la logica per i prodotti
+    if (segmento) {
+      return await getProdottiBySegmento(req, res, segmento);
+    }
+    
+    // Altrimenti usa la logica originale per le offerte
+    if (!operatore) {
+      return res.status(400).json({ error: 'Parametro operatore obbligatorio' });
+    }
+
+    await sql.connect(dbConfig);
+    let query = '';
+    const operatorId = parseInt(operatore);
+    if (req.query.from === 'attivazioni') {
+      if ([3, 8, 12, 14].includes(operatorId) && tipologia) {
+        // SKY su attivazioni
+        query = `
+          SELECT  
+            o.IDOfferta,
+            op.Denominazione AS NomeOperatore,
+            o.LogoLink,
+            o.Titolo,
+            o.DescrizioneBreve,
+            o.Crediti,
+            o.idOperatore,
+            o.Segmento,
+            o.LogoLink AS LogoOperatore,
+            o.TemplateDatiOfferta,
+            o.LimiteSIM AS disponibilita,
+            o.Tipo AS categoria
+          FROM dbo.tbOfferte o
+          INNER JOIN dbo.tbOperatori2 op ON o.idOperatore = op.IDOperatore
+          WHERE o.idOperatore = ${operatorId}
+            AND o.Segmento = '${tipologia}'
+            AND ISNULL(o.ValidaDal, GETDATE()) <= GETDATE()
+            AND ISNULL(o.ValidaAl, GETDATE()) >= GETDATE()
+            AND op.IDOperatore IS NOT NULL
+          ORDER BY o.Crediti ASC`;
+      } else {
+        // ATTIVAZIONI per altri operatori: mostra solo offerte con Segmento RES o BUS
+        query = `
+          SELECT  
+            o.IDOfferta,
+            op.Denominazione AS NomeOperatore,
+            o.LogoLink,
+            o.Titolo,
+            o.DescrizioneBreve,
+            o.Crediti,
+            o.idOperatore,
+            o.Segmento,
+            o.LogoLink AS LogoOperatore,
+            o.TemplateDatiOfferta,
+            o.LimiteSIM AS disponibilita,
+            o.Tipo AS categoria
+          FROM dbo.tbOfferte o
+          INNER JOIN dbo.tbOperatori2 op ON o.idOperatore = op.IDOperatore
+          WHERE o.idOperatore = ${operatorId}
+            AND (o.Segmento = 'RES' OR o.Segmento = 'BUS')
+            AND ISNULL(o.ValidaDal, GETDATE()) <= GETDATE()
+            AND ISNULL(o.ValidaAl, GETDATE()) >= GETDATE()
+            AND op.IDOperatore IS NOT NULL
+          ORDER BY o.Crediti ASC`;
+      }
+    } else {
+      // Pagina assistenza: solo offerte SOS
+      query = `
+        SELECT  
+          o.IDOfferta,
+          op.Denominazione AS NomeOperatore,
+          o.LogoLink,
+          o.Titolo,
+          o.DescrizioneBreve,
+          o.Crediti,
+          o.idOperatore,
+          o.Segmento,
+          o.LogoLink AS LogoOperatore,
+          o.TemplateDatiOfferta,
+          o.LimiteSIM AS disponibilita,
+          o.Tipo AS categoria
+        FROM dbo.tbOfferte o
+        INNER JOIN dbo.tbOperatori2 op ON o.idOperatore = op.IDOperatore
+        WHERE o.idOperatore = ${operatorId}
+          AND o.Tipo = 'SOS'
+          AND ISNULL(o.ValidaDal, GETDATE()) <= GETDATE()
+          AND ISNULL(o.ValidaAl, GETDATE()) >= GETDATE()
+          AND op.IDOperatore IS NOT NULL
+        ORDER BY o.Crediti ASC`;
+    }
+    console.log('Esecuzione query offerte:', query);
+    const result = await sql.query(query);
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('Errore in /api/offerte:', err);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  }
+});
+
+// Funzione per ottenere i prodotti filtrati per segmento (SIM o TELEFONI)
+async function getProdottiBySegmento(req, res, segmento) {
+  try {
+    await sql.connect(dbConfig);
+    
+    // Mappa i segmenti richiesti ai valori nel database
+    let query = '';
+    let params = {};
+    
+    if (segmento === 'SIM') {
+      query = `
+        SELECT
+          o.IDOfferta AS id,
+          o.Titolo AS nome,
+          o.DescrizioneBreve AS descrizione,
+          o.Crediti AS prezzo,
+          o.LogoLink,
+          o.Segmento,
+          o.idOperatore,
+          o.LimiteSIM AS disponibilita,
+          o.Tipo AS categoria,
+          op.Denominazione AS NomeOperatore
+        FROM dbo.tbOfferte o
+        INNER JOIN dbo.tbOperatori2 op ON o.idOperatore = op.IDOperatore
+        WHERE o.tipoOfferta = 4
+          AND o.Segmento = 'SIM'
+          AND (o.OnlyFor IS NULL OR o.OnlyFor = '')
+          AND ISNULL(o.Offerta_Inviata, 1) = 1
+          AND ISNULL(o.ValidaDal, GETDATE()) <= GETDATE()
+          AND ISNULL(o.ValidaAl, GETDATE()) >= GETDATE()
+        ORDER BY o.Titolo`;
+    } else if (segmento === 'FIN') { // TELEFONI
+      query = `
+        SELECT
+          o.IDOfferta AS id,
+          o.Titolo AS nome,
+          o.DescrizioneBreve AS descrizione,
+          o.Crediti AS prezzo,
+          o.LogoLink,
+          o.Segmento,
+          o.idOperatore,
+          o.LimiteSIM AS disponibilita,
+          o.Tipo AS categoria,
+          op.Denominazione AS NomeOperatore
+        FROM dbo.tbOfferte o
+        INNER JOIN dbo.tbOperatori2 op ON o.idOperatore = op.IDOperatore
+        WHERE o.tipoOfferta = 4
+          AND o.Segmento = 'CELL'
+          AND o.idOperatore = 11
+          AND (o.OnlyFor IS NULL OR o.OnlyFor = '')
+          AND ISNULL(o.Offerta_Inviata, 1) = 1
+          AND ISNULL(o.ValidaDal, GETDATE()) <= GETDATE()
+          AND ISNULL(o.ValidaAl, GETDATE()) >= GETDATE()
+        ORDER BY o.Titolo`;
+    } else {
+      return res.status(400).json({ error: 'Segmento non valido' });
+    }
+
+    console.log('Esecuzione query prodotti per segmento:', segmento);
+    const result = await sql.query(query);
+    
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('Errore nel recupero prodotti per segmento:', err);
+    res.status(500).json({ error: 'Errore server', details: err.message });
+  } finally {
+  }
+}
+
+app.get('/api/andamento', authenticateToken, async (req, res) => {
+  try {
+    console.log('Richiesta ricevuta su /api/andamento');
+    
+
+    // La connessione al database è gestita dal middleware globale
+    const result = await sql.query`
+      WITH MonthlyData AS (
+        SELECT 
+          FORMAT(ord.DataStato, 'yyyy/MM') AS [ANNO_MESE],
+          d.RagioneSociale AS Point,
+          SUM(CASE WHEN o.IDOPERATORE = 5 THEN 1 ELSE 0 END) AS ILIAD,
+          SUM(CASE WHEN o.IDOPERATORE = 6 THEN 1 ELSE 0 END) AS KENA,
+          SUM(CASE WHEN o.IDOPERATORE = 7 THEN 1 ELSE 0 END) AS [1MOBILE],
+          SUM(CASE WHEN o.IDOPERATORE = 13 THEN 1 ELSE 0 END) AS WEEDOO
+        FROM 
+          dbo.tbOFFERTE o
+          JOIN dbo.tbordini ord ON o.IDOFFERTA = ord.IDOFFERTA
+          JOIN dbo.tbDealers d ON ord.iddealer = d.idDealer
+        WHERE 
+          o.IDOPERATORE IN (4, 5, 6, 7, 13)
+          AND d.idDealer = ${req.user.dealerId}
+          AND ord.Stato = '1'
+        GROUP BY 
+          FORMAT(ord.DataStato, 'yyyy/MM'), d.RagioneSociale
+      ),
+      MonthlyTotals AS (
+        SELECT 
+          FORMAT(ord.DataStato, 'yyyy/MM') AS [ANNO_MESE],
+          'TOTALE ' + UPPER(FORMAT(ord.DataStato, 'MMMM', 'it-IT')) AS Point,
+          SUM(CASE WHEN o.IDOPERATORE = 5 THEN 1 ELSE 0 END) AS ILIAD,
+          SUM(CASE WHEN o.IDOPERATORE = 6 THEN 1 ELSE 0 END) AS KENA,
+          SUM(CASE WHEN o.IDOPERATORE = 7 THEN 1 ELSE 0 END) AS [1MOBILE],
+          SUM(CASE WHEN o.IDOPERATORE = 13 THEN 1 ELSE 0 END) AS WEEDOO
+        FROM 
+          dbo.tbOFFERTE o
+          JOIN dbo.tbordini ord ON o.IDOFFERTA = ord.IDOFFERTA
+          JOIN dbo.tbDealers d ON ord.iddealer = d.idDealer
+        WHERE 
+          o.IDOPERATORE IN (4, 5, 6, 7, 13)
+          AND d.idDealer = ${req.user.dealerId}
+        GROUP BY 
+          FORMAT(ord.DataStato, 'yyyy/MM'), FORMAT(ord.DataStato, 'MMMM', 'it-IT')
+      )
+      SELECT 
+        [ANNO_MESE] AS ANNO_MESE,
+        Point,
+        ISNULL(ILIAD, 0) AS ILIAD,
+        ISNULL(KENA, 0) AS KENA,
+        ISNULL([1MOBILE], 0) AS [1MOBILE],
+        ISNULL(WEEDOO, 0) AS WEEDOO
+      FROM (
+        SELECT 
+          [ANNO_MESE],
+          Point,
+          ILIAD,
+          KENA,
+          [1MOBILE],
+          WEEDOO,
+          0 AS SortOrder
+        FROM MonthlyTotals
+      
+        UNION ALL
+      
+        SELECT 
+          [ANNO_MESE],
+          Point,
+          ILIAD,
+          KENA,
+          [1MOBILE],
+          WEEDOO,
+          1 AS SortOrder
+        FROM MonthlyData
+      ) AS CombinedData
+      ORDER BY 
+        [ANNO_MESE] DESC,
+        SortOrder,
+        CASE WHEN Point LIKE 'TOTALE%' THEN 0 ELSE 1 END,
+        Point`;
+
+    res.json(result.recordset);
+  } catch (err) {
+    console.error('Errore nel recupero dei dati di andamento:', err);
+    res.status(500).json({ error: 'Errore nel recupero dei dati di andamento', details: err.message });
+  }
+});
+
+// --- API: OBIETTIVI ---
+// GET /api/obiettivi
+app.get('/api/obiettivi', authenticateToken, async (req, res) => {
+  let fastwebStats = {}; // Spostato qui per renderlo disponibile in tutto lo scope
+  
+  try {
+    // 1️⃣ Auth e validazione
+    const authHeader = req.headers['authorization'];
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Token mancante' });
+    }
+
+    const token = authHeader.split(' ')[1];
+    // Dati utente già disponibili grazie al middleware authenticateToken
+    const idDealer = parseInt(req.user.dealerId, 10);
+    if (isNaN(idDealer)) {
+      return res.status(401).json({ error: 'ID dealer non valido' });
+    }
+
+    // 2️⃣ Anno / Mese attuale
+    const now = new Date();
+    const anno = now.getFullYear();
+    const mese = now.getMonth() + 1;
+
+    // 3️⃣ Connessione al database
+    await sql.connect(dbConfig);
+    
+    // 3️⃣ Leggi tutte le soglie_report
+    const request = new sql.Request();
+    request.input('anno', sql.Int, anno);
+    request.input('mese', sql.Int, mese);
+
+    const soglieRes = await request.query(`
+      SELECT operatore, categoria, segmento, 
+             soglia_1_min, soglia_1_max, 
+             soglia_2_min, soglia_2_max, 
+             soglia_3_min, soglia_3_max, 
+             soglia_4_min, soglia_4_max 
+      FROM soglie_report 
+      WHERE anno = @anno AND mese = @mese`);
+
+    const soglie = soglieRes.recordset;
+
+    // 5️⃣ Funzione helper per calcolare il target e i mancanti
+    const calcolaMancano = (attuale, sogliaRow) => {
+      const soglieOrdered = [
+        sogliaRow.soglia_1_max,
+        sogliaRow.soglia_2_max,
+        sogliaRow.soglia_3_max,
+        sogliaRow.soglia_4_max
+      ].filter(s => s != null);
+      
+      for (const sogliaMax of soglieOrdered) {
+        if (attuale < sogliaMax) {
+          return Math.max(0, sogliaMax - attuale);
+        }
+      }
+      return 0;
+    };
+
+    const getTarget = (attuale, sogliaRow) => {
+      const soglieOrdered = [
+        sogliaRow.soglia_1_max,
+        sogliaRow.soglia_2_max,
+        sogliaRow.soglia_3_max,
+        sogliaRow.soglia_4_max
+      ].filter(x => x != null);
+      
+      for (const sogliaMax of soglieOrdered) {
+        if (attuale < sogliaMax) {
+          return sogliaMax;
+        }
+      }
+      return soglieOrdered[soglieOrdered.length - 1] || 0;
+    };
+
+    // 6️⃣ Carichiamo i dati per ogni operatore
+    
+    // 1. Fastweb TLC
+    try {
+      console.log('Esecuzione query GetOrderStatisticsByDealerByidDealer per idDealer:', idDealer);
+      const fastwebStatsRes = await sql.query`EXEC GetOrderStatisticsByDealerByidDealer @idDealer = ${idDealer}`;
+      fastwebStats = fastwebStatsRes.recordset[0] || {};
+      console.log('Risultati Fastweb TLC:', JSON.stringify(fastwebStats, null, 2));
+      
+      // Log delle soglie trovate per Fastweb TLC
+      const soglieFastweb = soglie.filter(s => s.operatore === 'Fastweb' && s.categoria !== 'ENERGIA');
+      console.log('Soglie trovate per Fastweb TLC:', JSON.stringify(soglieFastweb, null, 2));
+    } catch (error) {
+      console.error('Errore durante l\'esecuzione di GetOrderStatisticsByDealerByidDealer:', error);
+      fastwebStats = {};
+    }
+
+    const mappaCategorieFastweb = {
+      'MOBILE RES': fastwebStats['MOBILI RES'] || 0,
+      'MOBILE SHP': fastwebStats['MOBILI BUS'] || 0,
+      'FISSO RES': fastwebStats['FISSI RES'] || 0,
+      'FISSO SHP': fastwebStats['FISSI BUS'] || 0,
+      'Convergenza RES': fastwebStats['di cui CONV_RES'] || 0,
+      'Convergenza SHP': fastwebStats['di cui CONV_BUS'] || 0
+    };
+
+    const categorieFastweb = soglie
+      .filter(s => s.operatore === 'Fastweb' && s.categoria !== 'ENERGIA')
+      .map(s => {
+        const nomeCategoria = `${s.categoria} ${s.segmento}`.trim();
+        const attuale = mappaCategorieFastweb[nomeCategoria] || 0;
+        const target = getTarget(attuale, s);
+        const mancano = calcolaMancano(attuale, s);
+
+        return { nome: nomeCategoria, attuale, target, mancano };
+      });
+
+    // 2. Fastweb ENERGIA
+    const energiaRes = await sql.query`
+      EXEC ReportContrattiEnergiaPeridDealer @idDealer = ${idDealer}`;
+    const energiaStats = energiaRes.recordset[0] || {};
+
+    const energiaAttualeRES = energiaStats['Segmento RES'] || 0;
+    const energiaAttualeSHP = energiaStats['Segmento BUS'] || 0;
+
+    const categorieEnergia = [];
+
+    const sogliaEnergiaRES = soglie.find(s => s.operatore === 'Fastweb' && s.categoria === 'ENERGIA' && s.segmento === 'RES');
+    if (sogliaEnergiaRES) {
+      categorieEnergia.push({
+        nome: 'Energia RES',
+        attuale: energiaAttualeRES,
+        target: getTarget(energiaAttualeRES, sogliaEnergiaRES),
+        mancano: calcolaMancano(energiaAttualeRES, sogliaEnergiaRES)
+      });
+    }
+
+    const sogliaEnergiaSHP = soglie.find(s => s.operatore === 'Fastweb' && s.categoria === 'ENERGIA' && s.segmento === 'SHP');
+    if (sogliaEnergiaSHP) {
+      categorieEnergia.push({
+        nome: 'Energia SHP',
+        attuale: energiaAttualeSHP,
+        target: getTarget(energiaAttualeSHP, sogliaEnergiaSHP),
+        mancano: calcolaMancano(energiaAttualeSHP, sogliaEnergiaSHP)
+      });
+    }
+
+    // 3. Sky Mobile & WIFI
+    const skyMobileWifiRes = await sql.query`
+      EXEC ReportAttivazioniSkyMobileWifibyIddealer @idDealer = ${idDealer}`;
+    const skyMobileWifiStats = skyMobileWifiRes.recordset[0] || {};
+    
+    // Debug: Log the structure of the returned data
+    console.log('Sky Mobile & WIFI Stats Raw:', JSON.stringify(skyMobileWifiStats, null, 2));
+
+    // Mappa per le categorie Sky Mobile & WIFI
+    const mappaSkyMobileWifi = {
+      'Mobile': skyMobileWifiStats.Mobile || 0,
+      'WIFI': skyMobileWifiStats.WIFI || 0,
+      'Mobile + WIFI': skyMobileWifiStats['Mobile + WIFI'] || 0
+    };
+
+    const categorieSkyMobileWifi = Object.keys(mappaSkyMobileWifi).map(cat => {
+      const attuale = mappaSkyMobileWifi[cat];
+      const sogliaRow = soglie.find(s => s.operatore === 'Sky Mobile & WIFI' && s.categoria === cat);
+      const target = sogliaRow ? getTarget(attuale, sogliaRow) : 0;
+      const mancano = sogliaRow ? calcolaMancano(attuale, sogliaRow) : 0;
+
+      return { nome: cat, attuale, target, mancano };
+    });
+
+    // 4. Sky TV
+    const skyTvRes = await sql.query`
+      EXEC ReportAttivazioniSkyTV @idDealer = ${idDealer}`;
+    const skyTvStats = skyTvRes.recordset[0] || {};
+
+    const mappaSkyTv = {
+      'ONLY TV': skyTvStats['ONLY TV'] || 0,
+      '3P': skyTvStats['3P'] || 0,
+      'GLASS': skyTvStats['GLASS'] || 0,
+      '3P GLASS': skyTvStats['3P GLASS'] || 0
+    };
+
+    const categorieSkyTv = Object.keys(mappaSkyTv).map(cat => {
+      const attuale = mappaSkyTv[cat];
+      const sogliaRow = soglie.find(s => s.operatore === 'Sky TV' && s.categoria === cat);
+      const target = sogliaRow ? getTarget(attuale, sogliaRow) : 0;
+      const mancano = sogliaRow ? calcolaMancano(attuale, sogliaRow) : 0;
+
+      return { nome: cat, attuale, target, mancano };
+    });
+
+    // 7️⃣ Prepara la risposta finale
+    const risposta = {
+      obiettivi: [
+        { operatore: 'Fastweb TLC', categorie: categorieFastweb },
+        { operatore: 'Fastweb ENERGIA', categorie: categorieEnergia },
+        { operatore: 'Sky Mobile & WIFI', categorie: categorieSkyMobileWifi },
+        { operatore: 'Sky TV', categorie: categorieSkyTv }
+      ]
+    };
+
+
+    res.json(risposta);
+  } catch (err) {
+    console.error('Errore in /api/obiettivi:', err);
+    res.status(500).json({ error: 'Errore nel recupero degli obiettivi', details: err.message });
+  }
+});

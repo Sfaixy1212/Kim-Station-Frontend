@@ -1,0 +1,47 @@
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f4f4;padding:30px 0">
+  <tr>
+    <td align="center">
+      <table width="420" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;box-shadow:0 2px 8px #0001;padding:32px 28px;">
+        <tr>
+          <td align="center" style="padding-bottom:18px;">
+            <img src="cid:logo@kimweb.agency" alt="KimWeb" height="48" style="margin-bottom:12px;" />
+            <h2 style="font-family:sans-serif;color:#1e4ddb;margin:0 0 6px 0;">Nuovo ordine da dealer</h2>
+          </td>
+        </tr>
+        <tr>
+          <td style="font-family:sans-serif;color:#222;font-size:16px;line-height:1.6;">
+            <p>Ciao <b>{{adminName}}</b>,</p>
+            <p>È stato appena inserito un nuovo ordine da parte del dealer <b>{{dealerName}}</b>.<br>
+  <b>Totale:</b> €{{totale}}<br>
+  <b>Note:</b> {{note}}</p>
+
+  <p style="margin:18px 0 6px 0;"><b>Prodotti ordinati:</b></p>
+  <table width="100%" cellpadding="6" cellspacing="0" style="border-collapse:collapse;background:#f7f8fa;border-radius:8px;overflow:hidden;font-size:15px;margin-bottom:12px;">
+    <thead>
+      <tr style="background:#e7eaf3;color:#1e4ddb;">
+        <th align="left">Prodotto</th>
+        <th align="center">Quantità</th>
+        <th align="right">Prezzo unitario</th>
+        <th align="right">Totale</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{righeProdotti}}
+    </tbody>
+  </table>
+  <p style="margin:10px 0 0 0;"><b>Modalità di spedizione:</b> {{spedizione}}</p>
+            <div style="margin:24px 0;text-align:center;">
+              <a href="https://staging3.kimweb.agency/admin" style="display:inline-block;background:#1e4ddb;color:#fff;text-decoration:none;padding:12px 32px;border-radius:28px;font-weight:600;font-size:16px;">Gestisci ordine</a>
+            </div>
+            <p style="color:#6c7a96;font-size:13px;">Ordine #{{idOrdineProdotto}}</p>
+          </td>
+        </tr>
+        <tr>
+          <td align="center" style="padding-top:18px;font-size:12px;color:#bfc7d1;">
+            KimWeb Agency &copy; 2025
+          </td>
+        </tr>
+      </table>
+    </td>
+  </tr>
+</table>
